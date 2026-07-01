@@ -137,12 +137,16 @@ interface DashState {
   authReady: boolean; // initial session check finished
   authError: string | null;
   authBusy: boolean;
+  authNotice: string | null; // transient success message (e.g. "reset link sent")
+  recovering: boolean; // arrived via a password-reset link → show set-new-password
   dataLoading: boolean; // loading this user's transactions from the DB
   localMode: boolean; // true when Supabase is not configured
   initAuth: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   loadUserData: () => Promise<void>;
 
   // live prices + the computed portfolio model
@@ -232,6 +236,8 @@ export const useStore = create<DashState>((set, get) => ({
   authReady: LOCAL_MODE,
   authError: null,
   authBusy: false,
+  authNotice: null,
+  recovering: false,
   dataLoading: false,
   localMode: LOCAL_MODE,
   initAuth: () => {
@@ -245,10 +251,11 @@ export const useStore = create<DashState>((set, get) => ({
       set({ user: u, authReady: true });
       if (u) void get().loadUserData();
     });
-    supabase.auth.onAuthStateChange((_evt, session) => {
+    supabase.auth.onAuthStateChange((evt, session) => {
       const u = session?.user ?? null;
       const prevId = get().user?.id;
       set({ user: u });
+      if (evt === "PASSWORD_RECOVERY") set({ recovering: true });
       if (u && u.id !== prevId) void get().loadUserData();
       if (!u) set({ txns: [], portfolio: buildPortfolio([], get().prices), txFile: "No transactions yet — upload your Nordnet CSV" });
     });
@@ -269,6 +276,24 @@ export const useStore = create<DashState>((set, get) => ({
   },
   signOut: async () => {
     if (supabase) await supabase.auth.signOut();
+  },
+  resetPassword: async (email) => {
+    if (!supabase) return;
+    set({ authBusy: true, authError: null, authNotice: null });
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin,
+    });
+    set({ authBusy: false });
+    if (error) set({ authError: error.message });
+    else set({ authNotice: "If an account exists for that email, a password-reset link is on its way. Check your inbox." });
+  },
+  updatePassword: async (password) => {
+    if (!supabase) return;
+    set({ authBusy: true, authError: null });
+    const { error } = await supabase.auth.updateUser({ password });
+    set({ authBusy: false });
+    if (error) { set({ authError: error.message }); return; }
+    set({ recovering: false, authNotice: null });
   },
   loadUserData: async () => {
     const u = get().user;

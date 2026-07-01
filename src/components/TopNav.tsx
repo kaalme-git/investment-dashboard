@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { useStore } from "../store/useStore";
+import UserMenu from "./UserMenu";
 
 const LINKS = [
   { label: "Dashboard", path: "/dashboard/overview", match: "/dashboard" },
@@ -10,23 +10,9 @@ const LINKS = [
   { label: "Calculations", path: "/calculations", match: "/calculations" },
 ];
 
-function initials(email: string | undefined): string {
-  if (!email) return "JK";
-  const name = email.split("@")[0].replace(/[^A-Za-z]/g, "");
-  return (name.slice(0, 2) || "U").toUpperCase();
-}
-
 export default function TopNav() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const user = useStore((s) => s.user);
-  const localMode = useStore((s) => s.localMode);
-  const signOut = useStore((s) => s.signOut);
-
-  const onAvatar = () => {
-    if (localMode) return;
-    if (window.confirm("Sign out?")) void signOut();
-  };
 
   return (
     <div className="nav">
@@ -41,13 +27,7 @@ export default function TopNav() {
         </button>
       ))}
       <div className="navsp" />
-      <button
-        className="iconbtn av"
-        onClick={onAvatar}
-        title={localMode ? "Local mode" : (user?.email || "") + " · click to sign out"}
-      >
-        {localMode ? "JK" : initials(user?.email)}
-      </button>
+      <UserMenu />
     </div>
   );
 }
