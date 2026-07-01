@@ -1,59 +1,63 @@
 # Inderes Portfolio Dashboard
 
-A web-based investment dashboard built on the Inderes Design System, implemented
-from the handoff in `design_handoff_portfolio_dashboard/`.
+A live, multi-user investment dashboard: upload your Nordnet transaction export
+and it reconstructs your portfolio, prices it, and computes time-weighted returns
+against a benchmark — all from your real data.
 
-Stack: **Vite + React 18 + TypeScript + React Router + Zustand**. Charts are
-hand-rolled SVG (ported from the prototype) — no charting dependency. Styling
-uses the real Inderes design tokens (`src/styles/tokens.css`) and fonts.
+**Live:** https://investment-dashboard-six-liard.vercel.app
+
+Stack: **Vite + React 18 + TypeScript + React Router + Zustand**, **Supabase**
+(auth + Postgres), and **Vercel** serverless functions. Charts are hand-rolled SVG
+(no charting dependency). Styling uses the real Inderes design tokens and fonts.
+
+## How it works
+
+- **Transactions → positions → prices → model.** Uploaded transactions (deduped by
+  Nordnet `Id`) drive `buildPortfolio()` in [src/data/live.ts](src/data/live.ts),
+  which reconstructs holdings, classifies them generically (stock / equity fund /
+  fixed-income fund / cash-equivalent), and computes a Nordnet-style TWR including
+  since-sold instruments. Nothing is hardcoded to one portfolio.
+- **Accounts.** Supabase email/password auth; each account's transactions and
+  settings are private via row-level security.
+- **Shared incremental price cache.** [api/_lib/cache.mjs](api/_lib/cache.mjs)
+  resolves any ISIN via Yahoo (EUR-normalized), stores immutable weekly history in
+  Postgres, and only fetches missing data — warm reads are ~0.1s and shared across
+  all users. A daily cron keeps the DB awake.
 
 ## Run it locally
 
-Node is installed at `%LOCALAPPDATA%\nodejs-portable` and on your PATH.
+Node is a portable install at `%LOCALAPPDATA%\nodejs-portable`.
 
 ```bash
-npm install        # first time only
-npm run dev         # dev server with hot reload → http://localhost:5173
+npm install                    # first time only
+node dev-server.mjs            # price API on :5174 (reads .env.local)
+npm run dev                    # app on http://localhost:5173 (proxies /api → :5174)
 ```
 
-Other scripts:
+Copy `.env.example` → `.env.local` and fill in the Supabase keys (see
+[SUPABASE_SETUP.md](SUPABASE_SETUP.md)). Without them the app runs in single-user
+local mode (localStorage, no login).
 
 ```bash
-npm run build       # type-check + production build into dist/
-npm run preview     # serve the production build → http://localhost:4173
+npm run build                  # type-check + production build into dist/
 ```
 
-## Deploy to the cloud (Vercel)
+## Deploy
 
-One-time setup, run from this folder:
-
-```bash
-npx vercel          # first run: log in (opens a browser), then accept the defaults
-npx vercel --prod   # publish a production URL you can share / revisit
-```
-
-Vercel auto-detects Vite (build `npm run build`, output `dist`). `vercel.json`
-already routes client-side paths to `index.html`. Every push/redeploy gives a
-fresh URL.
+Push-to-deploy via Vercel's GitHub integration: every push to `main` deploys to
+production, other branches get preview URLs. Manual deploy: `npx vercel --prod`.
+Env vars and full steps in [DEPLOY.md](DEPLOY.md).
 
 ## Project layout
 
 ```
+api/            Vercel serverless functions (price cache, keep-alive) + _lib
 src/
-  charts/        SVG chart components (Donut, LineChart, Sparkline, …)
-  components/    App shell, top nav, shared bits
-  data/          Mock data + pure compute fns — the "data contract" (types.ts)
-  lib/           Deterministic RNG helpers for series/sparklines
-  screens/       One folder per screen (dashboard/, …)
-  store/         Zustand UI state
-  styles/        tokens.css (Inderes tokens) + dashboard.css (ported component CSS)
-  icons/         Inderes in-house SVG icon set (React components)
-public/fonts/    GT America + Inderes Mono webfonts
+  charts/       SVG chart components (Donut, LineChart, Sparkline, …)
+  data/         live.ts (portfolio engine), transactions parser, DB repos
+  lib/          Supabase client + RNG helpers
+  screens/      One folder per screen (dashboard/, AuthScreen, …)
+  store/        Zustand state (auth, transactions, prices, settings)
+  styles/       Inderes design tokens + component CSS
+supabase/       schema.sql (tables + row-level security)
 ```
-
-## Status
-
-- [x] Phase 0 — scaffold, tokens/fonts, app shell, data layer, chart primitives
-- [x] Phase 1 — Dashboard → Overview
-- [ ] Allocation · Holdings · Transactions · Watchlist · Company · Research · Report · Strategy · Calculations
-- [ ] Wire the "Ask about my portfolio" box to a Claude serverless proxy (`/api/ask`)
