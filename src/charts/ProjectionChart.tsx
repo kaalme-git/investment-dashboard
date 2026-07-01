@@ -84,16 +84,31 @@ export default function ProjectionChart({ exp, target, height = 250, baseYear, l
         ) : null}
         <path d={line(exp)} fill="none" stroke="#0000e6" strokeWidth={2.2} vectorEffect="non-scaling-stroke" />
         {hoverIdx != null && (
-          <>
-            <line x1={X(hoverIdx)} y1={padT} x2={X(hoverIdx)} y2={height - padB} stroke="#bdbdbd" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-            <circle cx={X(hoverIdx)} cy={Y(exp[hoverIdx])} r={4} fill="#0000e6" stroke="#fff" strokeWidth={1.5} />
-          </>
+          <line x1={X(hoverIdx)} y1={padT} x2={X(hoverIdx)} y2={height - padB} stroke="#bdbdbd" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
         )}
         {onHover && (
           <rect x={padL} y={padT} width={w - padL - padR} height={height - padB - padT} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => onHover(null)} style={{ cursor: "crosshair" }} />
         )}
       </svg>
       {labels}
+      {/* hover dot as an HTML overlay so it stays perfectly round (the SVG is stretched) */}
+      {hoverIdx != null && (
+        <span
+          style={{
+            position: "absolute",
+            left: xpct + "%",
+            top: (Y(exp[hoverIdx]) / height) * 100 + "%",
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background: "#0000e6",
+            border: "1.5px solid #fff",
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+            zIndex: 4,
+          }}
+        />
+      )}
       {hoverIdx != null && (
         <div
           style={{

@@ -58,16 +58,19 @@ export default function LineChart({
         <path d={d(b)} fill="none" stroke="#9b9b9b" strokeWidth={1.4} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
         <path d={d(a)} fill="none" stroke={accent} strokeWidth={2.2} vectorEffect="non-scaling-stroke" />
         {hoverIdx != null && (
-          <>
-            <line x1={X(hoverIdx)} y1={pad} x2={X(hoverIdx)} y2={height - padB} stroke="#bdbdbd" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-            <circle cx={X(hoverIdx)} cy={Y(b[hoverIdx])} r={3.5} fill="#fff" stroke="#9b9b9b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-            <circle cx={X(hoverIdx)} cy={Y(a[hoverIdx])} r={4} fill={accent} stroke="#fff" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-          </>
+          <line x1={X(hoverIdx)} y1={pad} x2={X(hoverIdx)} y2={height - padB} stroke="#bdbdbd" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
         )}
         {onHover && (
           <rect x={0} y={0} width={w} height={height} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => onHover(null)} style={{ cursor: "crosshair" }} />
         )}
       </svg>
+      {/* hover dots as HTML overlays so they stay perfectly round (the SVG is stretched) */}
+      {hoverIdx != null && (
+        <>
+          <Dot xPct={xpct} yPct={(Y(b[hoverIdx]) / height) * 100} size={8} bg="#fff" border="#9b9b9b" />
+          <Dot xPct={xpct} yPct={(Y(a[hoverIdx]) / height) * 100} size={9} bg={accent} border="#fff" />
+        </>
+      )}
       {hoverIdx != null && (
         <div
           style={{
@@ -93,6 +96,26 @@ export default function LineChart({
         </div>
       )}
     </div>
+  );
+}
+
+function Dot({ xPct, yPct, size, bg, border }: { xPct: number; yPct: number; size: number; bg: string; border: string }) {
+  return (
+    <span
+      style={{
+        position: "absolute",
+        left: xPct + "%",
+        top: yPct + "%",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: bg,
+        border: `1.5px solid ${border}`,
+        transform: "translate(-50%, -50%)",
+        pointerEvents: "none",
+        zIndex: 4,
+      }}
+    />
   );
 }
 
