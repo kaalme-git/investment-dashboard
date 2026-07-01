@@ -1,19 +1,24 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useStore } from "../store/useStore";
 import { reportsForTicker, mapRes } from "../data/research";
 import ResearchCard from "../components/ResearchCard";
 
 const stCls: Record<string, string> = { Portfolio: "st-pf", Watchlist: "st-wl", Inactive: "st-in" };
+const fmtTs = (ts: number) =>
+  ts ? new Date(ts).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "earlier";
 
 export default function CompanyScreen() {
   const navigate = useNavigate();
   const { ticker = "" } = useParams();
   const watchlist = useStore((s) => s.watchlist);
   const notes = useStore((s) => s.notes);
-  const setNote = useStore((s) => s.setNote);
+  const addNote = useStore((s) => s.addNote);
+  const removeNote = useStore((s) => s.removeNote);
   const addWatchTicker = useStore((s) => s.addWatchTicker);
   const companyMetrics = useStore((s) => s.portfolio.companyMetrics);
   const isHeld = useStore((s) => s.portfolio.isHeld);
+  const [draft, setDraft] = useState("");
 
   const metrics = companyMetrics(ticker);
   const held = isHeld(ticker);
@@ -21,6 +26,13 @@ export default function CompanyScreen() {
   const status = held ? "Portfolio" : wEntry ? "Watchlist" : "Inactive";
   const name = metrics?.name || wEntry?.name || ticker;
   const reports = reportsForTicker(ticker).map(mapRes);
+  const companyNotes = [...(notes[ticker] || [])].sort((a, b) => b.ts - a.ts);
+
+  const post = () => {
+    if (!draft.trim()) return;
+    addNote(ticker, draft);
+    setDraft("");
+  };
 
   return (
     <>
@@ -91,17 +103,37 @@ export default function CompanyScreen() {
         )}
 
         <div className="card conotes">
-          <div className="cardttl">My notes</div>
-          <textarea
-            className="stratin conotesin"
-            rows={8}
-            placeholder="Why you're interested, valuation thoughts, what to watch for…"
-            value={notes[ticker] || ""}
-            onChange={(e) => setNote(ticker, e.target.value)}
-          />
-          <div className="modehint">
-            Saved locally and tied to {ticker} — they persist when you re-import transactions or refresh the portfolio.
+          <div className="cardttl">Notes</div>
+          <div className="noteform">
+            <textarea
+              className="stratin notein"
+              rows={3}
+              placeholder="Add a note — valuation thoughts, what to watch for, a decision you made…"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") post(); }}
+            />
+            <div className="noteformfoot">
+              <span className="modehint">Saved to your account and tied to {ticker}.</span>
+              <button className="askbtn" onClick={post} disabled={!draft.trim()}>Post note</button>
+            </div>
           </div>
+
+          {companyNotes.length === 0 ? (
+            <div className="emptyhint" style={{ padding: "14px 2px 4px" }}>No notes yet — post your first above.</div>
+          ) : (
+            <div className="notelist">
+              {companyNotes.map((n) => (
+                <div className="noteitem" key={n.id}>
+                  <div className="notemeta">
+                    <span className="notets">{fmtTs(n.ts)}</span>
+                    <button className="notedel" onClick={() => removeNote(ticker, n.id)} title="Delete note">Delete</button>
+                  </div>
+                  <div className="notetext">{n.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>

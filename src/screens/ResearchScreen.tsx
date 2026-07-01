@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useStore } from "../store/useStore";
 import { researchByTab, mapRes, type ResTab } from "../data/research";
 import ResearchCard from "../components/ResearchCard";
-import WatchlistPanel from "../components/WatchlistPanel";
+import CompaniesPanel from "../components/CompaniesPanel";
 
 const TABS: { k: ResTab; label: string }[] = [
   { k: "equity", label: "Equity research" },
@@ -46,12 +46,12 @@ export default function ResearchScreen() {
           </button>
         ))}
         <button className={"tab" + (showWatchlist ? " on" : "")} onClick={() => setShowWatchlist(true)}>
-          Watchlist
+          Companies
         </button>
       </div>
       <div className="body">
         {showWatchlist ? (
-          <WatchlistPanel />
+          <CompaniesPanel />
         ) : (
           <div className="reslist">
             {items.map((r) => (

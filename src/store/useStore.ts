@@ -169,14 +169,46 @@ I favour profitable, cash-generative, dividend-paying companies and trim names I
 
 Target ~70% equities. Rebalance when any asset class drifts more than 5pp from target. No single position above 15% of the portfolio.`;
 
-function loadNotes(): Record<string, string> {
+// A single posted note on a company, saved under the user's account.
+export interface NoteEntry {
+  id: string;
+  ts: number; // posted-at (ms)
+  text: string;
+}
+export type NotesMap = Record<string, NoteEntry[]>;
+
+export function newId(): string {
   try {
-    const nt = JSON.parse(localStorage.getItem("pf_notes") || "null");
-    if (nt && typeof nt === "object") return nt;
+    return crypto.randomUUID();
   } catch {
-    /* ignore */
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
-  return {};
+}
+
+// Accept both the new shape (arrays of notes) and the legacy shape (one string
+// per company) and normalise to NotesMap so older saved notes aren't lost.
+export function normalizeNotes(raw: unknown): NotesMap {
+  const out: NotesMap = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [ticker, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string") {
+      if (v.trim()) out[ticker] = [{ id: newId(), ts: 0, text: v.trim() }];
+    } else if (Array.isArray(v)) {
+      const list = v
+        .filter((n) => n && typeof (n as NoteEntry).text === "string" && (n as NoteEntry).text.trim())
+        .map((n) => ({ id: (n as NoteEntry).id || newId(), ts: (n as NoteEntry).ts || 0, text: (n as NoteEntry).text }));
+      if (list.length) out[ticker] = list;
+    }
+  }
+  return out;
+}
+
+function loadNotes(): NotesMap {
+  try {
+    return normalizeNotes(JSON.parse(localStorage.getItem("pf_notes") || "null"));
+  } catch {
+    return {};
+  }
 }
 
 interface DashState {
@@ -226,7 +258,7 @@ interface DashState {
 
   // watchlist + notes
   watchlist: WatchEntry[];
-  notes: Record<string, string>;
+  notes: NotesMap;
   wlTicker: string;
   wlName: string;
 
@@ -274,7 +306,8 @@ interface DashState {
   addWatch: () => void;
   addWatchTicker: (ticker: string, name?: string) => void;
   removeWatch: (ticker: string) => void;
-  setNote: (ticker: string, text: string) => void;
+  addNote: (ticker: string, text: string) => void;
+  removeNote: (ticker: string, id: string) => void;
 }
 
 // In local mode we seed from localStorage / the baked export; with accounts we
@@ -379,7 +412,7 @@ export const useStore = create<DashState>((set, get) => ({
         strategyText: settings?.strategy ?? s.strategyText,
         targets: settings?.targets ?? s.targets,
         watchlist: settings?.watchlist ?? s.watchlist,
-        notes: settings?.notes ?? s.notes,
+        notes: settings?.notes ? normalizeNotes(settings.notes) : s.notes,
         bench: settings?.bench ?? s.bench,
         calcRet: settings?.calc?.ret ?? s.calcRet,
         calcMonthly: settings?.calc?.monthly ?? s.calcMonthly,
@@ -556,8 +589,20 @@ export const useStore = create<DashState>((set, get) => ({
     set({ watchlist: wl });
     scheduleSettingsSave(get);
   },
-  setNote: (ticker, text) => {
-    const notes = { ...get().notes, [ticker]: text };
+  addNote: (ticker, text) => {
+    const t = text.trim();
+    if (!t) return;
+    const entry: NoteEntry = { id: newId(), ts: Date.now(), text: t };
+    const notes = { ...get().notes, [ticker]: [...(get().notes[ticker] || []), entry] };
+    persistNotes(notes);
+    set({ notes });
+    scheduleSettingsSave(get);
+  },
+  removeNote: (ticker, id) => {
+    const list = (get().notes[ticker] || []).filter((n) => n.id !== id);
+    const notes = { ...get().notes };
+    if (list.length) notes[ticker] = list;
+    else delete notes[ticker];
     persistNotes(notes);
     set({ notes });
     scheduleSettingsSave(get);
@@ -571,7 +616,7 @@ function persistWatch(wl: WatchEntry[]) {
     /* ignore */
   }
 }
-function persistNotes(notes: Record<string, string>) {
+function persistNotes(notes: NotesMap) {
   try {
     localStorage.setItem("pf_notes", JSON.stringify(notes));
   } catch {

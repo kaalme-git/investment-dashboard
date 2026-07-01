@@ -1,7 +1,7 @@
 // Per-user settings (strategy text, target allocation, watchlist, notes) stored
 // in the user_settings table (one JSON-ish row per user, RLS-guarded).
 import { supabase } from "../lib/supabase";
-import type { WatchEntry } from "../store/useStore";
+import type { WatchEntry, NotesMap } from "../store/useStore";
 
 // Calculations-screen inputs + projection allocation mode.
 export interface CalcPrefs {
@@ -16,7 +16,7 @@ export interface UserSettings {
   strategy: string;
   targets: Record<string, number | "">;
   watchlist: WatchEntry[];
-  notes: Record<string, string>;
+  notes: NotesMap;
   bench: string; // Overview benchmark selection
   calc: CalcPrefs | null; // Calculations inputs
 }
@@ -34,7 +34,7 @@ export async function loadSettings(userId: string): Promise<Partial<UserSettings
     strategy: data.strategy ?? undefined,
     targets: (data.targets as UserSettings["targets"]) ?? undefined,
     watchlist: (data.watchlist as WatchEntry[]) ?? undefined,
-    notes: (data.notes as Record<string, string>) ?? undefined,
+    notes: (data.notes as NotesMap) ?? undefined,
     bench: (data.bench as string) ?? undefined,
     calc: (data.calc as CalcPrefs) ?? undefined,
   };

@@ -479,3 +479,15 @@
 .divval{font:700 11px var(--font-family-mono);fill:#1a1d24}
 
 .divyear.divfut{fill:var(--c-fg-subtle);font-style:italic}
+
+/* ---- company posted-notes feed ---- */
+.noteform{margin-top:6px}
+.notein{width:100%;min-height:64px}
+.noteformfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
+.notelist{margin-top:16px;display:flex;flex-direction:column;gap:10px}
+.noteitem{border:1px solid var(--c-br-subtle);border-radius:10px;padding:11px 13px;background:var(--c-bg-subtle)}
+.notemeta{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.notets{font:600 11px var(--font-family-mono);color:var(--c-fg-subtle)}
+.notedel{background:none;border:none;color:#b3261e;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;padding:0}
+.notedel:hover{text-decoration:underline}
+.notetext{font-size:13.5px;line-height:1.5;white-space:pre-wrap}
