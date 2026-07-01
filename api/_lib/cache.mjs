@@ -6,6 +6,7 @@
 // If Supabase env vars are absent, transparently falls back to direct Yahoo.
 import { createClient } from "@supabase/supabase-js";
 import { fetchInstrument, fetchPrices } from "./prices.mjs";
+import { fetchRecs } from "./inderes.mjs";
 
 const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPA_SECRET = process.env.SUPABASE_SECRET_KEY;
@@ -37,6 +38,9 @@ function metaToInfo(m, history) {
     divYield: m.div_yield,
     price: m.last_quote,
     prevClose: m.prev_close,
+    rec: m.rec ?? null,
+    targetPrice: m.target_price ?? null,
+    recDate: m.rec_date ?? null,
     history: history || [],
   };
 }
@@ -98,7 +102,8 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
         const r = await fetchInstrument(isin, period1).catch(() => ({ isin, found: false }));
 
         await db.from("instrument_meta").upsert(infoToMetaRow(r, nowIso), { onConflict: "isin" });
-        metaBy[isin] = { ...infoToMetaRow(r, nowIso), quote_updated_at: nowIso };
+        // keep Inderes fields (rec/target/rec_date) that the Yahoo refresh doesn't touch
+        metaBy[isin] = { ...(metaBy[isin] || {}), ...infoToMetaRow(r, nowIso), quote_updated_at: nowIso };
 
         if (r.found && r.history?.length) {
           await db
@@ -112,6 +117,55 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
         }
       }),
     );
+  }
+
+  // 3a) INITIAL population of recommendations for newly-held equities only
+  // (rec_updated_at is null). Scheduled refreshes happen via the 10:00-weekday
+  // cron (api/refresh-recs) — not on every dashboard open. Covers renamed ISINs
+  // too by including any rec row that shares a Yahoo symbol with a held equity.
+  try {
+    const heldEqSyms = [...new Set(uniq.map((i) => metaBy[i]).filter((m) => m && m.type === "EQUITY" && m.symbol).map((m) => m.symbol))];
+    if (heldEqSyms.length) {
+      const { data: cand } = await db.from("instrument_meta").select("isin,symbol,rec_updated_at").in("symbol", heldEqSyms);
+      const toRefresh = (cand || []).filter((r) => !r.rec_updated_at).map((r) => r.isin);
+      if (toRefresh.length) {
+        const recs = await fetchRecs(toRefresh);
+        const stamp = new Date().toISOString();
+        // stamp every checked ISIN (so not-found renamed ISINs aren't retried for a day);
+        // set rec fields only when Inderes returned one.
+        const rows = toRefresh.map((isin) => {
+          const r = recs[isin];
+          return r?.rec
+            ? { isin, rec: r.rec, target_price: r.targetPrice, rec_date: r.recDate, rec_updated_at: stamp }
+            : { isin, rec_updated_at: stamp };
+        });
+        await db.from("instrument_meta").upsert(rows, { onConflict: "isin" });
+        for (const isin of uniq) {
+          const r = recs[isin];
+          if (r?.rec && metaBy[isin]) { metaBy[isin].rec = r.rec; metaBy[isin].target_price = r.targetPrice; metaBy[isin].rec_date = r.recDate; }
+        }
+      }
+    }
+  } catch { /* recommendations are best-effort */ }
+
+  // 3b) recommendation fallback by Yahoo symbol — handles instruments whose ISIN
+  // changed via a corporate action (old & new ISIN share the same symbol, e.g.
+  // Talenom). If a requested instrument has no rec of its own, borrow the rec
+  // from any instrument_meta row with the same symbol.
+  const needRec = uniq.filter((i) => metaBy[i] && !metaBy[i].rec && metaBy[i].symbol);
+  const wantSyms = [...new Set(needRec.map((i) => metaBy[i].symbol))];
+  if (wantSyms.length) {
+    const { data: recRows } = await db
+      .from("instrument_meta")
+      .select("symbol,rec,target_price,rec_date")
+      .in("symbol", wantSyms)
+      .not("rec", "is", null);
+    const bySym = {};
+    for (const r of recRows || []) if (!bySym[r.symbol]) bySym[r.symbol] = r;
+    for (const i of needRec) {
+      const r = bySym[metaBy[i].symbol];
+      if (r) { metaBy[i].rec = r.rec; metaBy[i].target_price = r.target_price; metaBy[i].rec_date = r.rec_date; }
+    }
   }
 
   // 4) assemble the response (only history from `start` onward)

@@ -38,7 +38,7 @@
 .cardttl{font-size:16px;font-weight:700;letter-spacing:var(--letter-spacing)}
 .cardhd{display:flex;align-items:center;justify-content:space-between}
 .up{color:var(--c-fg-success)}.down{color:var(--c-fg-error)}
-.rec{display:inline-block;font:600 11px var(--font-family);padding:3px 10px;border-radius:1.5em;letter-spacing:.01em;white-space:nowrap}
+.rec{display:inline-block;font:600 10px var(--font-family);padding:2px 8px;border-radius:1.5em;letter-spacing:.01em;white-space:nowrap}
 .rec.buy{background:#eaf4e6;color:#2f6b1f}.rec.accu{background:#eef1ea;color:#566b45}.rec.hold{background:#efefef;color:#5c5c5c}.rec.redu{background:#fbeee9;color:#b2492f}.rec.sell{background:#fae9e8;color:#a52420}
 .pbtn{border:none;background:none;font:600 12px var(--font-family-mono);color:var(--c-fg-subtle);padding:4px 9px;border-radius:1.5em;cursor:pointer}
 .pbtn.on{background:var(--c-bg-muted);color:#000}
@@ -185,8 +185,8 @@
 .tp.pas{background:#f1e9ff;color:#6b34b8}
 .tp.csh{background:var(--c-bg-muted);color:var(--c-fg-subtle)}
 .rec.na{background:transparent;color:var(--c-fg-subtle)}
-.t10 .dthead,.t10 .dtrow{grid-template-columns:64px 1.3fr 60px .9fr 70px 86px 62px 92px 80px 66px}
-.t10 .dtgroup{display:grid;grid-template-columns:64px 1.3fr 60px .9fr 70px 86px 62px 92px 80px 66px;align-items:center;gap:8px;padding:9px 18px 7px;background:var(--c-bg-subtle);border-bottom:1px solid var(--c-br-subtle)}
+.t10 .dthead,.t10 .dtrow{grid-template-columns:64px 1.15fr 60px .85fr 70px 86px 62px 92px 76px 86px}
+.t10 .dtgroup{display:grid;grid-template-columns:64px 1.15fr 60px .85fr 70px 86px 62px 92px 76px 86px;align-items:center;gap:8px;padding:9px 18px 7px;background:var(--c-bg-subtle);border-bottom:1px solid var(--c-br-subtle)}
 .dgname{grid-column:1 / 7;font:700 11px var(--font-family);text-transform:uppercase;letter-spacing:.05em}
 .dgw{grid-column:7;justify-self:end;font-size:13px;font-weight:600}
 .dgv{grid-column:8;justify-self:end;font-size:13px;font-weight:600}
@@ -240,7 +240,7 @@
 
 /* holdings tab */
 .hdtable{padding:6px 0 4px;overflow:hidden}
-.hdhead,.hdrow,.hdgroup{display:grid;grid-template-columns:1.5fr 56px 92px 70px 78px 62px 92px 60px 76px 56px 60px 62px;gap:8px;padding:0 18px;align-items:center}
+.hdhead,.hdrow,.hdgroup{display:grid;grid-template-columns:1.4fr 56px 92px 70px 78px 62px 92px 60px 76px 56px 56px 80px;gap:8px;padding:0 18px;align-items:center}
 .hdhead{height:34px;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--c-fg-subtle);font-weight:600;border-bottom:1px solid var(--c-br-subtle)}
 .hdrow{height:42px;font-size:12.5px;border-bottom:1px solid var(--c-br-subtle)}
 .hdrow:last-child{border-bottom:none}
@@ -417,3 +417,48 @@
 .authlink{background:none;border:none;color:#0000e6;font-family:inherit;font-size:13px;cursor:pointer;padding:0}
 .authlink:hover{text-decoration:underline}
 .authforgot{align-self:flex-end;margin-top:10px}
+
+/* ---- transactions: filter bar ---- */
+.txthd{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.txfilteredof{color:#9aa0ab;font-weight:400}
+.txfilters{display:flex;align-items:center;gap:8px}
+.txsel{appearance:none;height:34px;border:1px solid #d6d8de;border-radius:8px;background:#fff;padding:0 30px 0 11px;font-size:13px;font-family:inherit;cursor:pointer;color:#1a1d24}
+.txfilters .selwrap{position:relative}
+.txfilters .selwrap::after{content:"";position:absolute;right:11px;top:50%;width:7px;height:7px;border-right:2px solid #8a8f99;border-bottom:2px solid #8a8f99;transform:translateY(-65%) rotate(45deg);pointer-events:none}
+.txdate{height:34px;border:1px solid #d6d8de;border-radius:8px;background:#fff;padding:0 9px;font-size:13px;font-family:inherit;color:#1a1d24}
+.txdate:focus,.txsel:focus{outline:none;border-color:#0000e6}
+.txdash{color:#9aa0ab}
+.txclear{height:34px;border:1px solid #d6d8de;border-radius:8px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;cursor:pointer;color:#0000e6}
+.txclear:hover{background:#f4f5f7}
+
+/* ---- prices refresh button (dashboard subhead) ---- */
+.asofrow{display:flex;align-items:center;gap:12px;margin-top:3px}
+.refreshbtn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border:1px solid #d6d8de;border-radius:999px;background:#fff;color:#0000e6;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:background .15s}
+.refreshbtn:hover:not(:disabled){background:#eef2ff}
+.refreshbtn:disabled{color:#9aa0ab;cursor:default}
+.refreshbtn.spin svg{animation:spin 0.9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---- transactions: multi-select type filter ---- */
+.txms{position:relative}
+.txms .txsel{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.txms .txsel::after{content:"";width:7px;height:7px;border-right:2px solid #8a8f99;border-bottom:2px solid #8a8f99;transform:translateY(-2px) rotate(45deg)}
+.txms-pop{position:absolute;top:calc(100% + 6px);left:0;min-width:210px;background:#fff;border:1px solid #e7e8ec;border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.14);padding:6px;z-index:1000}
+.txms-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;font-size:13px;cursor:pointer;color:#1a1d24}
+.txms-item:hover{background:#f4f5f7}
+.txms-item input{width:15px;height:15px;accent-color:#0000e6;cursor:pointer}
+.txms-clear{display:block;width:100%;text-align:left;margin-top:4px;padding:8px 10px;border:none;border-top:1px solid #eef0f3;background:none;color:#0000e6;font-size:13px;font-family:inherit;cursor:pointer;border-radius:0 0 7px 7px}
+.txms-clear:hover{background:#f4f5f7}
+
+/* ---- transactions: different-portfolio warning + clear-all ---- */
+.importwarn{margin-top:14px;background:#fff8ec;border:1px solid #f3d9a8;border-radius:10px;padding:13px 14px}
+.iwttl{font-size:13px;font-weight:700;color:#8a5a00}
+.iwmsg{font-size:12.5px;color:#6b5836;margin-top:4px;line-height:1.45}
+.iwacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+.iwbtn{height:32px;padding:0 12px;border-radius:8px;border:1px solid #d6d8de;background:#fff;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer}
+.iwbtn:hover{background:#f4f5f7}
+.iwbtn.danger{background:#b3261e;border-color:#b3261e;color:#fff}
+.iwbtn.danger:hover{background:#9a1f18}
+.iwbtn.ghost{border-color:transparent;color:#6b7280}
+.clearbtn{margin-top:14px;width:100%;height:36px;border:1px solid #f0d0cc;border-radius:9px;background:#fff;color:#b3261e;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
+.clearbtn:hover{background:#fdf1ef}

@@ -33,7 +33,7 @@ export default function OverviewTable() {
               </span>
               <span className="dsec">{h.sector}</span>
               <span className="num r">{h.lastStr}</span>
-              <span className="c dsp">{h.sparkSeed != null && <Sparkline seed={h.sparkSeed} up={h.sparkUp} />}</span>
+              <span className="c dsp">{h.sparkData && <Sparkline data={h.sparkData} up={h.sparkUp} />}</span>
               <span className="num r">{h.weightStr}</span>
               <span className="num r">{h.valueStr}</span>
               <span className={"num r " + h.totCls}>{h.totalStr}</span>

@@ -51,8 +51,18 @@ create table if not exists public.instrument_meta (
   prev_close       double precision,      -- previous close, EUR
   found            boolean default true,
   quote_updated_at timestamptz,
-  meta_updated_at  timestamptz default now()
+  meta_updated_at  timestamptz default now(),
+  -- Inderes analyst data (recommendation + target price are public on inderes.fi)
+  rec              text,                  -- BUY | INCREASE | HOLD | REDUCE | SELL
+  target_price     double precision,
+  rec_date         date,                  -- date of the analyst recommendation
+  rec_updated_at   timestamptz            -- when we last refreshed rec from Inderes (daily TTL)
 );
+-- If the table already exists from an earlier run, add the Inderes columns:
+alter table public.instrument_meta add column if not exists rec text;
+alter table public.instrument_meta add column if not exists target_price double precision;
+alter table public.instrument_meta add column if not exists rec_date date;
+alter table public.instrument_meta add column if not exists rec_updated_at timestamptz;
 alter table public.instrument_meta enable row level security;
 drop policy if exists "meta readable" on public.instrument_meta;
 create policy "meta readable" on public.instrument_meta for select using (true);

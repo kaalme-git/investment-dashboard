@@ -60,6 +60,7 @@ export interface CompanyMetrics {
   yieldStr: string;
   recShort: string;
   recCls: string;
+  targetStr: string;
 }
 
 export interface PerfGroups {

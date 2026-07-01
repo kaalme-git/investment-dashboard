@@ -53,6 +53,7 @@ export default function CompanyScreen() {
             <Metric k="Shares" v={metrics.sharesStr} />
             <Metric k="Avg cost" v={metrics.avgStr} />
             <Metric k="Div. yield" v={metrics.yieldStr} />
+            <Metric k="Inderes target" v={metrics.targetStr} />
             <div className="cm">
               <div className="cmk">Inderes rec.</div>
               <div className="cmv">

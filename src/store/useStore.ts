@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import type { AllocDim } from "../data/types";
 import type { TrendPeriod } from "../data/portfolio";
-import { parseCsv, SAMPLE_CSV, type Txn } from "../data/transactions";
+import { parseCsv, type Txn } from "../data/transactions";
 import { REAL_TXNS_CSV } from "../data/realTxns";
 import { buildPortfolio, BENCH_SYMBOL, type Portfolio, type PriceMap } from "../data/live";
 import { supabase, supabaseEnabled } from "../lib/supabase";
-import { loadTxns as dbLoadTxns, saveTxns as dbSaveTxns } from "../data/txnsRepo";
+import { loadTxns as dbLoadTxns, saveTxns as dbSaveTxns, clearTxns as dbClearTxns } from "../data/txnsRepo";
 import { loadSettings as dbLoadSettings, saveSettings as dbSaveSettings } from "../data/settingsRepo";
 import type { User } from "@supabase/supabase-js";
 import type { ResTab } from "../data/research";
@@ -17,7 +17,7 @@ const LOCAL_MODE = !supabaseEnabled;
 // ---- persistence helpers (transactions + fetched prices survive reloads) ----
 const LS_TXNS = "pf_txns";
 const LS_PRICES = "pf_prices";
-const PRICE_TTL = 5 * 60 * 1000; // client dedupe window; the server cache throttles Yahoo
+const PRICE_TTL = 6 * 60 * 60 * 1000; // don't auto-refresh prices more than every 6h on reload; the Refresh button forces it, and the server cache throttles Yahoo further
 
 function dedupeTxns(txns: Txn[]): Txn[] {
   const seen = new Set<string>();
@@ -48,6 +48,65 @@ function loadPrices(): { prices: PriceMap; fetchedAt: number | null } {
 }
 function persistPrices(prices: PriceMap, fetchedAt: number) {
   try { localStorage.setItem(LS_PRICES, JSON.stringify({ prices, fetchedAt })); } catch { /* ignore */ }
+}
+
+export interface PendingImport {
+  txns: Txn[];
+  name: string;
+  message: string;
+}
+
+// Heuristic: does an uploaded file look like a DIFFERENT portfolio than the
+// existing history? True when it shares no transaction Ids and almost no
+// instruments with what's already loaded (so merging would mix two portfolios).
+function differentPortfolioWarning(parsed: Txn[], existing: Txn[]): string | null {
+  if (!existing.length || !parsed.length) return null;
+  const exIds = new Set(existing.map((t) => t.id));
+  if (parsed.some((t) => exIds.has(t.id))) return null; // shares transactions → same account / incremental
+  const exIsins = new Set(existing.map((t) => t.isin).filter(Boolean));
+  const newIsins = [...new Set(parsed.map((t) => t.isin).filter(Boolean))];
+  if (!newIsins.length) return null;
+  const shared = newIsins.filter((i) => exIsins.has(i)).length;
+  if (shared / newIsins.length >= 0.34) return null; // enough overlap → same portfolio
+  return `This file shares no transactions with your existing history and ${shared === 0 ? "none" : "few"} of its instruments match your current holdings — it looks like a different portfolio.`;
+}
+
+// Commit an imported batch: merge (dedupe by Id) or replace-all. Handles both
+// the signed-in (Supabase) and local-mode (localStorage) paths.
+async function commitTxns(
+  set: (p: Partial<DashState>) => void,
+  get: () => DashState,
+  parsed: Txn[],
+  name: string,
+  replace: boolean,
+) {
+  if (!LOCAL_MODE && get().user) {
+    set({ dataLoading: true, authError: null });
+    try {
+      const merged = await dbSaveTxns(get().user!.id, parsed, replace ? "refresh" : "add");
+      set({
+        txns: merged,
+        dataLoading: false,
+        pendingImport: null,
+        txFile: name + " · " + (replace ? "replaced — " : "") + merged.length + " transactions in account",
+        portfolio: buildPortfolio(merged, get().prices),
+      });
+      void get().fetchPrices(true);
+    } catch (e) {
+      set({ dataLoading: false, authError: "Import failed: " + String((e as Error)?.message || e) });
+    }
+    return;
+  }
+  const base = replace ? [] : get().txns;
+  const merged = dedupeTxns([...base, ...parsed]);
+  persistTxns(merged);
+  set({
+    txns: merged,
+    pendingImport: null,
+    txFile: name + " · " + merged.length + " transactions",
+    portfolio: buildPortfolio(merged, get().prices),
+  });
+  void get().fetchPrices(true);
 }
 
 // Debounced save of the signed-in user's settings (strategy/targets/watchlist/notes).
@@ -129,8 +188,8 @@ interface DashState {
 
   // transactions
   txns: Txn[];
-  txMode: "refresh" | "add";
   txFile: string;
+  pendingImport: PendingImport | null; // set when an upload looks like a different portfolio
 
   // auth / account
   user: User | null;
@@ -186,9 +245,9 @@ interface DashState {
   setAiPrompt: (q: string) => void;
   askAi: (q?: string) => void;
 
-  setTxMode: (m: "refresh" | "add") => void;
   importCsv: (text: string, name: string) => Promise<void>;
-  loadSample: () => void;
+  resolveImport: (action: "replace" | "merge" | "cancel") => Promise<void>;
+  clearAllTxns: () => Promise<void>;
 
   setResTab: (t: ResTab) => void;
 
@@ -226,7 +285,7 @@ export const useStore = create<DashState>((set, get) => ({
   ai: { prompt: "", answer: "", loading: false, asked: false },
 
   txns: INITIAL_TXNS,
-  txMode: "refresh",
+  pendingImport: null,
   txFile: LOCAL_MODE
     ? "transactions-and-notes-export.csv · loaded from your Nordnet export"
     : "No transactions yet — upload your Nordnet CSV",
@@ -312,7 +371,9 @@ export const useStore = create<DashState>((set, get) => ({
         watchlist: settings?.watchlist ?? s.watchlist,
         notes: settings?.notes ?? s.notes,
       }));
-      void get().fetchPrices(true);
+      // respect the cache on load — only refetch if prices are stale (PRICE_TTL);
+      // the Refresh button forces an update on demand.
+      void get().fetchPrices(false);
     } catch (e) {
       set({ dataLoading: false, authError: "Could not load your data: " + String((e as Error)?.message || e) });
     }
@@ -396,40 +457,36 @@ export const useStore = create<DashState>((set, get) => ({
     }, 500);
   },
 
-  setTxMode: (m) => set({ txMode: m }),
+  // Upload merges by transaction Id (safe for full or partial exports). If the
+  // file looks like a different portfolio, hold it and ask the user what to do.
   importCsv: async (text, name) => {
     const parsed = dedupeTxns(parseCsv(text));
-    const mode = get().txMode;
-    // Signed in → persist to the per-user table (server-side dedupe by txn_id).
-    if (!LOCAL_MODE && get().user) {
-      set({ dataLoading: true, authError: null });
-      try {
-        const merged = await dbSaveTxns(get().user!.id, parsed, mode);
-        set({
-          txns: merged,
-          dataLoading: false,
-          txFile: name + " · " + parsed.length + " rows imported (" + merged.length + " total in account)",
-          portfolio: buildPortfolio(merged, get().prices),
-        });
-        void get().fetchPrices(true);
-      } catch (e) {
-        set({ dataLoading: false, authError: "Import failed: " + String((e as Error)?.message || e) });
-      }
-      return;
-    }
-    // Local mode → localStorage. Both modes dedupe by transaction Id.
-    const base = mode === "add" ? get().txns : [];
-    const merged = dedupeTxns([...base, ...parsed]);
-    const added = merged.length - base.length;
-    persistTxns(merged);
-    set({
-      txns: merged,
-      txFile: name + " · " + parsed.length + " rows, " + added + " new (" + merged.length + " total)",
-      portfolio: buildPortfolio(merged, get().prices),
-    });
-    void get().fetchPrices(true);
+    if (!parsed.length) { set({ txFile: name + " · no valid transaction rows found", pendingImport: null }); return; }
+    const warn = differentPortfolioWarning(parsed, get().txns);
+    if (warn) { set({ pendingImport: { txns: parsed, name, message: warn } }); return; }
+    await commitTxns(set, get, parsed, name, false);
   },
-  loadSample: () => get().importCsv(SAMPLE_CSV, "sample-transactions.csv"),
+  resolveImport: async (action) => {
+    const p = get().pendingImport;
+    if (!p) return;
+    if (action === "cancel") { set({ pendingImport: null }); return; }
+    await commitTxns(set, get, p.txns, p.name, action === "replace");
+  },
+  clearAllTxns: async () => {
+    if (!LOCAL_MODE && get().user) {
+      set({ dataLoading: true });
+      try { await dbClearTxns(get().user!.id); } catch (e) { set({ authError: "Could not clear: " + String((e as Error)?.message || e) }); }
+    } else {
+      persistTxns([]);
+    }
+    set({
+      txns: [],
+      dataLoading: false,
+      pendingImport: null,
+      txFile: "No transactions yet — upload your Nordnet CSV",
+      portfolio: buildPortfolio([], get().prices),
+    });
+  },
 
   setResTab: (t) => set({ resTab: t }),
 

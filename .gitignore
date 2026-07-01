@@ -20,3 +20,7 @@ pricecache
 
 # personal data — never commit (each user's data lives in Supabase)
 NordnetData
+
+# temp local scripts
+_*.mjs
+_*.json

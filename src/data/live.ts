@@ -42,8 +42,27 @@ export interface PriceInfo {
   price?: number;
   prevClose?: number;
   history?: { date: string; close: number }[];
+  // Inderes analyst data (populated for covered companies; publicly shown on inderes.fi)
+  rec?: string | null; // raw enum: BUY | INCREASE | HOLD | REDUCE | SELL
+  targetPrice?: number | null;
+  recDate?: string | null;
 }
 export type PriceMap = Record<string, PriceInfo>;
+
+// Inderes recommendation enum → UI label + CSS class (matches .rec.buy/.accu/…)
+const REC_DISPLAY: Record<string, [string, string]> = {
+  BUY: ["Buy", "buy"],
+  ACCUMULATE: ["Accumulate", "accu"],
+  INCREASE: ["Accumulate", "accu"],
+  HOLD: ["Hold", "hold"],
+  REDUCE: ["Reduce", "redu"],
+  DECREASE: ["Reduce", "redu"],
+  SELL: ["Sell", "sell"],
+};
+function recOf(raw?: string | null): { recShort: string; recCls: string } {
+  const d = raw ? REC_DISPLAY[String(raw).toUpperCase()] : null;
+  return d ? { recShort: d[0], recCls: d[1] } : { recShort: "—", recCls: "na" };
+}
 
 // ---- benchmark universe (UI key → Yahoo symbol) ----
 export const benchDefs: Record<string, BenchDef> = {
@@ -166,6 +185,10 @@ interface Sec {
   seed: number;
   cls: Cls;
   region: string;
+  recShort: string;
+  recCls: string;
+  targetPrice: number | null;
+  spark: number[]; // last ~13 weekly closes (EUR) for the 3-month sparkline
 }
 
 const shareSign = (c: string): number => (c === "buy" || c === "transfer_in" ? 1 : c === "sell" || c === "transfer_out" ? -1 : 0);
@@ -245,6 +268,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       const prev = info?.found && info.prevClose ? info.prevClose : last;
       const value = p.qty * last;
       const cost = p.cost;
+      const rd = recOf(info?.rec);
       return {
         isin: p.isin,
         name: p.name,
@@ -259,6 +283,10 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
         seed: hashInt(p.isin),
         cls,
         region: normRegion(info?.country, cls.sleeve !== "stocks"),
+        recShort: rd.recShort,
+        recCls: rd.recCls,
+        targetPrice: info?.targetPrice ?? null,
+        spark: info?.found && info.history ? info.history.slice(-13).map((h) => h.close) : [],
       };
     })
     .sort((a, b) => b.value - a.value);
@@ -364,17 +392,18 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       valueStr: eur(h.value),
       totalStr: sgn(h.totalPct),
       totCls: h.totalPct >= 0 ? "up" : "down",
-      ...recStub,
+      recShort: h.recShort,
+      recCls: h.recCls,
       typeLbl: tg[0],
       typeCls: "tp " + tg[1],
-      sparkSeed: h.seed,
-      sparkUp: h.totalPct >= 0,
+      sparkData: h.spark.length >= 2 ? h.spark : null,
+      sparkUp: h.spark.length >= 2 ? h.spark[h.spark.length - 1] >= h.spark[0] : h.totalPct >= 0,
     };
   };
   const cashRow: TableRow = {
     ticker: "CASH", name: "Cash balance (EUR)", sector: "—", lastStr: "—",
     weightStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%", valueStr: eur(CASH_V),
-    totalStr: "—", totCls: "", ...recStub, typeLbl: "Cash", typeCls: "tp csh", sparkSeed: null, sparkUp: true,
+    totalStr: "—", totCls: "", ...recStub, typeLbl: "Cash", typeCls: "tp csh", sparkData: null, sparkUp: true,
   };
   const tableGroups: TableGroup[] = grpMeta
     .map((g) => {
@@ -404,7 +433,8 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       totCls: h.totalPct >= 0 ? "up" : "down",
       yieldStr: h.divYield ? h.divYield.toFixed(1) + "%" : "—",
       weightStr: ((h.value / safeTotal) * 100).toFixed(1) + "%",
-      ...recStub,
+      recShort: h.recShort,
+      recCls: h.recCls,
     };
   };
   const cashRowFull: HoldRow = {
@@ -442,7 +472,9 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       sharesStr: h.qty.toLocaleString("en-US", { maximumFractionDigits: 2 }),
       avgStr: "€" + (h.qty ? h.cost / h.qty : 0).toFixed(2),
       yieldStr: h.divYield ? h.divYield.toFixed(1) + "%" : "—",
-      ...recStub,
+      recShort: h.recShort,
+      recCls: h.recCls,
+      targetStr: h.targetPrice ? "€" + h.targetPrice.toFixed(2) : "—",
     };
   };
 

@@ -1,38 +1,73 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
-import { computeTx } from "../data/transactions";
+import { computeTx, type TxCategory } from "../data/transactions";
 
 export default function TransactionsScreen() {
   const txns = useStore((s) => s.txns);
-  const txMode = useStore((s) => s.txMode);
   const txFile = useStore((s) => s.txFile);
-  const setTxMode = useStore((s) => s.setTxMode);
   const importCsv = useStore((s) => s.importCsv);
-  const loadSample = useStore((s) => s.loadSample);
+  const pendingImport = useStore((s) => s.pendingImport);
+  const resolveImport = useStore((s) => s.resolveImport);
+  const clearAllTxns = useStore((s) => s.clearAllTxns);
 
   const c = computeTx(txns);
 
-  // Optional ?sample flag → auto-load the demo data (handy for sharing a
-  // populated preview link). Never fires once real transactions exist.
+  // ---- filters (default: whole history) ----
+  // selTypes empty = all types; otherwise only the checked categories.
+  const [selTypes, setSelTypes] = useState<Set<TxCategory>>(new Set());
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const typeRef = useRef<HTMLDivElement>(null);
+
+  // transaction types actually present, for the dropdown (label per category)
+  const types = useMemo(() => {
+    const seen = new Map<TxCategory, string>();
+    c.txRows.forEach((r) => { if (!seen.has(r.cat)) seen.set(r.cat, r.type); });
+    return [...seen.entries()].map(([cat, label]) => ({ cat, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [c.txRows]);
+
   useEffect(() => {
-    if (txns.length === 0 && new URLSearchParams(window.location.search).has("sample")) loadSample();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!typeOpen) return;
+    const onDown = (e: MouseEvent) => { if (typeRef.current && !typeRef.current.contains(e.target as Node)) setTypeOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [typeOpen]);
+
+  const toggleType = (cat: TxCategory) => {
+    setSelTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  };
+
+  const rows = useMemo(() => {
+    return c.txRows.filter((r) => {
+      if (selTypes.size && !selTypes.has(r.cat)) return false;
+      if (from && (r.date === "—" || r.date < from)) return false;
+      if (to && (r.date === "—" || r.date > to)) return false;
+      return true;
+    });
+  }, [c.txRows, selTypes, from, to]);
+
+  const filtered = selTypes.size > 0 || !!from || !!to;
+  const clearFilters = () => { setSelTypes(new Set()); setFrom(""); setTo(""); };
+  const typeLabel = selTypes.size === 0 ? "All types" : selTypes.size + (selTypes.size === 1 ? " type" : " types");
 
   function readFile(f: File) {
-    // Decode by BOM — Nordnet exports are UTF-16 LE; the demo CSV is UTF-8.
+    // Decode by BOM — Nordnet exports are UTF-16 LE.
     f.arrayBuffer()
       .then((buf) => {
         const b = new Uint8Array(buf);
         let enc = "utf-8";
         if (b[0] === 0xff && b[1] === 0xfe) enc = "utf-16le";
         else if (b[0] === 0xfe && b[1] === 0xff) enc = "utf-16be";
-        const text = new TextDecoder(enc).decode(buf);
-        importCsv(text, f.name);
+        void importCsv(new TextDecoder(enc).decode(buf), f.name);
       })
       .catch(() => {
         const rd = new FileReader();
-        rd.onload = () => importCsv("" + rd.result, f.name);
+        rd.onload = () => void importCsv("" + rd.result, f.name);
         rd.readAsText(f);
       });
   }
@@ -47,17 +82,12 @@ export default function TransactionsScreen() {
     if (f) readFile(f);
   }
 
-  const modeHint =
-    txMode === "refresh"
-      ? "Rebuilds the whole portfolio from this file — replaces all existing transactions."
-      : "Keeps your current history and appends only the rows in this file.";
-
   return (
     <>
       <div className="subhead">
         <div>
           <div className="ttl">Transactions</div>
-          <div className="asof">Upload your full trade history (.csv) to build and update the portfolio</div>
+          <div className="asof">Upload your full Nordnet trade history (.csv) to build and update the portfolio</div>
         </div>
       </div>
       <div className="body">
@@ -73,35 +103,37 @@ export default function TransactionsScreen() {
               <div className="dzttl">Drop your .csv here, or click to browse</div>
               <div className="dzsub">{txFile || "No file selected — accepts .csv"}</div>
             </label>
-            <div className="moderow">
-              <span className="modelbl">On import</span>
-              <div className="toggle">
-                <button className={"tgl" + (txMode === "refresh" ? " on" : "")} onClick={() => setTxMode("refresh")}>
-                  Refresh all
-                </button>
-                <button className={"tgl" + (txMode === "add" ? " on" : "")} onClick={() => setTxMode("add")}>
-                  Add latest only
-                </button>
+            {pendingImport && (
+              <div className="importwarn">
+                <div className="iwttl">Different portfolio?</div>
+                <div className="iwmsg">{pendingImport.message}</div>
+                <div className="iwacts">
+                  <button className="iwbtn danger" onClick={() => void resolveImport("replace")}>Replace all history</button>
+                  <button className="iwbtn" onClick={() => void resolveImport("merge")}>Merge anyway</button>
+                  <button className="iwbtn ghost" onClick={() => void resolveImport("cancel")}>Cancel</button>
+                </div>
               </div>
-            </div>
-            <div className="modehint">{modeHint}</div>
-            <div className="uprow">
-              <button className="sampbtn" onClick={loadSample}>
-                Try with sample data
-              </button>
-            </div>
+            )}
             <div className="fmt">
-              Expected columns — <span className="mono">date, type, ticker, name, quantity, price, fee, currency</span>. Type
-              accepts Buy / Sell / Dividend.
+              Import your Nordnet transactions export (full or partial). New uploads are merged and deduplicated by
+              transaction ID, so only genuinely new rows are added — no duplicates.
             </div>
+            {txns.length > 0 && (
+              <button
+                className="clearbtn"
+                onClick={() => { if (window.confirm("Delete ALL transactions and start over? This cannot be undone.")) void clearAllTxns(); }}
+              >
+                Clear all transactions & start over
+              </button>
+            )}
           </div>
 
           <div className="card sumcard">
             <div className="cardttl">Import summary</div>
             {c.txEmpty ? (
               <div className="emptyhint">
-                No transactions imported yet. Upload a CSV — or load the sample — and your positions, cost basis and
-                allocations are built from it.
+                No transactions yet. Upload your Nordnet CSV and your positions, cost basis, allocations and performance
+                are built from it.
               </div>
             ) : (
               <>
@@ -128,8 +160,8 @@ export default function TransactionsScreen() {
                   <span className="num">{c.txDateRange}</span>
                 </div>
                 <div className="sumok">
-                  Positions & cost basis computed from your file. In the live product this rebuilds the full dashboard,
-                  allocations and performance.
+                  Positions & cost basis are computed from your file and drive the whole dashboard, allocations and
+                  performance.
                 </div>
               </>
             )}
@@ -139,7 +171,7 @@ export default function TransactionsScreen() {
         {c.txHas && (
           <>
             <div className="card postable">
-              <div className="cardttl">Resulting positions</div>
+              <div className="cardttl">Current positions</div>
               <div className="pthead">
                 <span>Ticker</span>
                 <span>Name</span>
@@ -159,7 +191,36 @@ export default function TransactionsScreen() {
             </div>
 
             <div className="card txtable">
-              <div className="cardttl">Transaction history · {c.txCount}</div>
+              <div className="txthd">
+                <div className="cardttl">
+                  Transaction history · {rows.length}
+                  {filtered && <span className="txfilteredof"> of {c.txCount}</span>}
+                </div>
+                <div className="txfilters">
+                  <div className="txms" ref={typeRef}>
+                    <button className="txsel" onClick={() => setTypeOpen((o) => !o)} aria-haspopup="true" aria-expanded={typeOpen}>
+                      {typeLabel}
+                    </button>
+                    {typeOpen && (
+                      <div className="txms-pop">
+                        {types.map((t) => (
+                          <label key={t.cat} className="txms-item">
+                            <input type="checkbox" checked={selTypes.has(t.cat)} onChange={() => toggleType(t.cat)} />
+                            <span>{t.label}</span>
+                          </label>
+                        ))}
+                        {selTypes.size > 0 && (
+                          <button className="txms-clear" onClick={() => setSelTypes(new Set())}>Clear types</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <input className="txdate" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} title="From date" />
+                  <span className="txdash">–</span>
+                  <input className="txdate" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} title="To date" />
+                  {filtered && <button className="txclear" onClick={clearFilters}>Clear</button>}
+                </div>
+              </div>
               <div className="txthead">
                 <span>Date</span>
                 <span>Type</span>
@@ -169,19 +230,23 @@ export default function TransactionsScreen() {
                 <span className="r">Price</span>
                 <span className="r">Amount</span>
               </div>
-              {c.txRows.map((t) => (
-                <div className="txtrow" key={t.i}>
-                  <span className="num">{t.date}</span>
-                  <span>
-                    <span className={t.typeCls}>{t.type}</span>
-                  </span>
-                  <span className="num dtick">{t.ticker}</span>
-                  <span className="dname">{t.name}</span>
-                  <span className="num r">{t.qtyStr}</span>
-                  <span className="num r">{t.priceStr}</span>
-                  <span className="num r">{t.amtStr}</span>
-                </div>
-              ))}
+              {rows.length === 0 ? (
+                <div className="emptyhint" style={{ padding: "18px 4px" }}>No transactions match these filters.</div>
+              ) : (
+                rows.map((t) => (
+                  <div className="txtrow" key={t.i}>
+                    <span className="num">{t.date}</span>
+                    <span>
+                      <span className={t.typeCls}>{t.type}</span>
+                    </span>
+                    <span className="num dtick">{t.ticker}</span>
+                    <span className="dname">{t.name}</span>
+                    <span className="num r">{t.qtyStr}</span>
+                    <span className="num r">{t.priceStr}</span>
+                    <span className="num r">{t.amtStr}</span>
+                  </div>
+                ))
+              )}
             </div>
           </>
         )}

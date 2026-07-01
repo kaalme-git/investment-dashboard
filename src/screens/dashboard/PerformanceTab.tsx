@@ -4,7 +4,7 @@ import LineChart from "../../charts/LineChart";
 
 const PERIODS: TrendPeriod[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "Max"];
 const GROUPS: { key: "stocks" | "funds" | "cash"; label: string }[] = [
-  { key: "stocks", label: "Individual stocks" },
+  { key: "stocks", label: "Stocks" },
   { key: "funds", label: "Funds & ETFs" },
   { key: "cash", label: "Cash & equivalent" },
 ];

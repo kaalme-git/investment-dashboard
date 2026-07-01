@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
-  "crons": [{ "path": "/api/keepalive", "schedule": "0 6 * * *" }]
+  "crons": [
+    { "path": "/api/keepalive", "schedule": "0 6 * * *" },
+    { "path": "/api/refresh-recs", "schedule": "0 7 * * 1-5" }
+  ]
 }

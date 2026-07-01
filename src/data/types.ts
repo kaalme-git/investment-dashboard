@@ -69,7 +69,7 @@ export interface TableRow {
   recCls: string;
   typeLbl: string;
   typeCls: string;
-  sparkSeed: number | null;
+  sparkData: number[] | null; // real ~3-month weekly closes (EUR); null if unavailable
   sparkUp: boolean;
 }
 

@@ -66,6 +66,13 @@ export async function loadTxns(userId: string): Promise<Txn[]> {
   return (data || []).map(fromRow);
 }
 
+/** Delete all of a user's transactions (start over). */
+export async function clearTxns(userId: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from("transactions").delete().eq("user_id", userId);
+  if (error) throw error;
+}
+
 /**
  * Persist an imported batch.
  *  • mode "add"     → upsert (only genuinely new txn_ids land; existing untouched)

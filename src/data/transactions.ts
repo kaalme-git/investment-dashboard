@@ -200,6 +200,7 @@ export interface PosRow {
 export interface TxRow {
   i: number;
   date: string;
+  cat: TxCategory;
   type: string;
   typeCls: string;
   ticker: string;
@@ -271,17 +272,21 @@ export function computeTx(txns: Txn[]): TxComputed {
     investedStr: eur(p.cost),
   }));
 
-  const txRows: TxRow[] = txns.map((t, i) => ({
-    i,
-    date: t.date || "—",
-    type: TYPE_LABEL[t.category],
-    typeCls: "txbadge " + TYPE_CLS[t.category],
-    ticker: t.ticker || t.isin || "—",
-    name: t.name || "—",
-    qtyStr: t.qty ? qtyFmt(t.qty) : "—",
-    priceStr: t.price ? t.price.toFixed(2) : "—",
-    amtStr: t.amount ? money2(t.amount) : t.qty && t.price ? money2(t.qty * t.price) : "—",
-  }));
+  const txRows: TxRow[] = txns
+    .map((t, i) => ({
+      i,
+      date: t.date || "—",
+      cat: t.category,
+      type: TYPE_LABEL[t.category],
+      typeCls: "txbadge " + TYPE_CLS[t.category],
+      ticker: t.ticker || t.isin || "—",
+      name: t.name || "—",
+      qtyStr: t.qty ? qtyFmt(t.qty) : "—",
+      priceStr: t.price ? t.price.toFixed(2) : "—",
+      amtStr: t.amount ? money2(t.amount) : t.qty && t.price ? money2(t.qty * t.price) : "—",
+    }))
+    // latest first (stable: ties keep import order, newest import index first)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.i - a.i));
 
   const dates = txns.map((t) => t.date).filter(Boolean).sort();
   // Net deposits = deposits − withdrawals (cash actually contributed to the account)
