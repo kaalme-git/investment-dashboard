@@ -150,23 +150,27 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
     }
   } catch { /* recommendations are best-effort */ }
 
-  // 3b) recommendation fallback by Yahoo symbol — handles instruments whose ISIN
+  // 3b) Inderes-data fallback by Yahoo symbol — handles instruments whose ISIN
   // changed via a corporate action (old & new ISIN share the same symbol, e.g.
-  // Talenom). If a requested instrument has no rec of its own, borrow the rec
-  // from any instrument_meta row with the same symbol.
-  const needRec = uniq.filter((i) => metaBy[i] && !metaBy[i].rec && metaBy[i].symbol);
-  const wantSyms = [...new Set(needRec.map((i) => metaBy[i].symbol))];
+  // Talenom). If a requested instrument is missing rec or dividend estimates,
+  // borrow them from any instrument_meta row with the same symbol.
+  const needFb = uniq.filter((i) => metaBy[i] && metaBy[i].symbol && (!metaBy[i].rec || !metaBy[i].div_estimates));
+  const wantSyms = [...new Set(needFb.map((i) => metaBy[i].symbol))];
   if (wantSyms.length) {
     const { data: recRows } = await db
       .from("instrument_meta")
-      .select("symbol,rec,target_price,rec_date")
-      .in("symbol", wantSyms)
-      .not("rec", "is", null);
-    const bySym = {};
-    for (const r of recRows || []) if (!bySym[r.symbol]) bySym[r.symbol] = r;
-    for (const i of needRec) {
-      const r = bySym[metaBy[i].symbol];
-      if (r) { metaBy[i].rec = r.rec; metaBy[i].target_price = r.target_price; metaBy[i].rec_date = r.rec_date; }
+      .select("symbol,rec,target_price,rec_date,div_estimates")
+      .in("symbol", wantSyms);
+    const bySymRec = {};
+    const bySymDiv = {};
+    for (const r of recRows || []) {
+      if (r.rec && !bySymRec[r.symbol]) bySymRec[r.symbol] = r;
+      if (r.div_estimates && !bySymDiv[r.symbol]) bySymDiv[r.symbol] = r;
+    }
+    for (const i of needFb) {
+      const m = metaBy[i];
+      if (!m.rec && bySymRec[m.symbol]) { const r = bySymRec[m.symbol]; m.rec = r.rec; m.target_price = r.target_price; m.rec_date = r.rec_date; }
+      if (!m.div_estimates && bySymDiv[m.symbol]) m.div_estimates = bySymDiv[m.symbol].div_estimates;
     }
   }
 
