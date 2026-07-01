@@ -410,8 +410,11 @@
 .um-head{padding:10px 12px 12px;border-bottom:1px solid #eef0f3;margin-bottom:6px}
 .um-caption{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#9aa0ab;font-weight:600}
 .um-email{font-size:14px;color:#1a1d24;font-weight:600;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.um-item{display:block;width:100%;text-align:left;background:none;border:none;border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;color:#1a1d24;cursor:pointer}
+.um-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;color:#1a1d24;cursor:pointer}
 .um-item:hover{background:#f4f5f7}
+.um-ico{flex:none}
+.um-item.danger{color:#b3261e}
+.um-item.danger:hover{background:#fdf1ef}
 
 /* forgot-password link on the auth card */
 .authlink{background:none;border:none;color:#0000e6;font-family:inherit;font-size:13px;cursor:pointer;padding:0}
@@ -462,3 +465,17 @@
 .iwbtn.ghost{border-color:transparent;color:#6b7280}
 .clearbtn{margin-top:14px;width:100%;height:36px;border:1px solid #f0d0cc;border-radius:9px;background:#fff;color:#b3261e;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
 .clearbtn:hover{background:#fdf1ef}
+
+/* ---- dividends tab ---- */
+.divcard{padding:18px 20px}
+.divlegend{display:flex;gap:16px;font-size:12px}
+.dlg{display:flex;align-items:center;gap:6px;color:var(--c-fg-muted);font-weight:600}
+.dlg::before{content:"";width:12px;height:12px;border-radius:3px}
+.dlg-act::before{background:#0000e6}
+.dlg-est::before{background:#c9d0ff;border:1px dashed #0000e6}
+.divchartwrap{margin-top:14px}
+.divaxis{font:600 10px var(--font-family-mono);fill:var(--c-fg-subtle)}
+.divyear{font:600 12px var(--font-family);fill:var(--c-fg-muted)}
+.divval{font:700 11px var(--font-family-mono);fill:#1a1d24}
+
+.divyear.divfut{fill:var(--c-fg-subtle);font-style:italic}

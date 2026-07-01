@@ -42,12 +42,19 @@ export default async function handler(_req, res) {
     }
     const target = [...new Set([...held, ...sibs])];
 
-    // 3) fetch live recs + 4) authoritative upsert (set current value, or clear)
+    // 3) fetch live recs + dividend estimates, then 4) upsert authoritatively
     const recs = await fetchRecs(target);
     const stamp = new Date().toISOString();
     const rows = target.map((isin) => {
       const r = recs[isin];
-      return { isin, rec: r?.rec ?? null, target_price: r?.targetPrice ?? null, rec_date: r?.recDate ?? null, rec_updated_at: stamp };
+      return {
+        isin,
+        rec: r?.rec ?? null,
+        target_price: r?.targetPrice ?? null,
+        rec_date: r?.recDate ?? null,
+        div_estimates: r?.divEstimates ?? null, // DPS estimates for T, T+1, T+2
+        rec_updated_at: stamp,
+      };
     });
     for (let i = 0; i < rows.length; i += 200) {
       await db.from("instrument_meta").upsert(rows.slice(i, i + 200), { onConflict: "isin" });

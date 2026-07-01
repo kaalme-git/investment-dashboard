@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useStore } from "../store/useStore";
 
 function initials(email: string): string {
@@ -12,6 +13,7 @@ function initials(email: string): string {
 export default function UserMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const user = useStore((s) => s.user);
   const localMode = useStore((s) => s.localMode);
   const signOut = useStore((s) => s.signOut);
@@ -44,12 +46,24 @@ export default function UserMenu() {
             <div className="um-caption">{localMode ? "Mode" : "Signed in as"}</div>
             <div className="um-email" title={email}>{localMode ? "Local mode" : email}</div>
           </div>
+          <button className="um-item" role="menuitem" onClick={() => { setOpen(false); navigate("/settings"); }}>
+            <svg className="um-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+              <path
+                d="M19.4 12a7.6 7.6 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.3 7.3 0 0 0-2-1.2L14.4 2h-4l-.5 2.6a7.3 7.3 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.5 2.6h4l.5-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Settings
+          </button>
           {!localMode && (
-            <button
-              className="um-item"
-              role="menuitem"
-              onClick={() => { setOpen(false); void signOut(); }}
-            >
+            <button className="um-item danger" role="menuitem" onClick={() => { setOpen(false); void signOut(); }}>
+              <svg className="um-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M10 17l-5-5 5-5M5 12h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               Log out
             </button>
           )}

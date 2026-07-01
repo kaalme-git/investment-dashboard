@@ -46,6 +46,13 @@ export interface PriceInfo {
   rec?: string | null; // raw enum: BUY | INCREASE | HOLD | REDUCE | SELL
   targetPrice?: number | null;
   recDate?: string | null;
+  divEstimates?: Record<string, number> | null; // analyst DPS estimates { year: dps } for T, T+1, T+2 (EUR)
+}
+
+export interface DividendBar {
+  year: number;
+  actual: number; // dividends received that calendar year (all holdings, incl. since-sold)
+  estimated: number; // current year only: analyst-estimated annual dividend from CURRENT holdings
 }
 export type PriceMap = Record<string, PriceInfo>;
 
@@ -220,6 +227,7 @@ export interface Portfolio {
   isHeld: (ticker: string) => boolean;
   companyMetrics: (ticker: string) => CompanyMetrics | null;
   getPerformance: (benchKey: string, period: TrendPeriod, groups: PerfGroups) => Performance;
+  dividends: DividendBar[];
   hasPrices: boolean;
 }
 
@@ -258,6 +266,14 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   const priceOf = (isin: string): PriceInfo | undefined => prices[isin];
   const hasPrices = Object.keys(prices).length > 0;
 
+  // lifetime dividends received per instrument (for TOTAL return incl. dividends)
+  const divByIsin: Record<string, number> = {};
+  for (const t of txns) {
+    if (t.category !== "dividend") continue;
+    const k = t.isin || t.ticker || t.name;
+    if (k) divByIsin[k] = (divByIsin[k] || 0) + (t.amount || 0);
+  }
+
   // ---- current securities ----
   const secs: Sec[] = Object.values(pos)
     .filter((p) => p.qty > 1e-6)
@@ -268,6 +284,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       const prev = info?.found && info.prevClose ? info.prevClose : last;
       const value = p.qty * last;
       const cost = p.cost;
+      const divRecv = divByIsin[p.isin] || 0; // dividends received while holding
       const rd = recOf(info?.rec);
       return {
         isin: p.isin,
@@ -278,7 +295,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
         last,
         value,
         dayPct: prev ? (last / prev - 1) * 100 : 0,
-        totalPct: cost > 0 ? (value / cost - 1) * 100 : 0,
+        totalPct: cost > 0 ? ((value + divRecv - cost) / cost) * 100 : 0,
         divYield: info?.divYield || 0,
         seed: hashInt(p.isin),
         cls,
@@ -308,7 +325,8 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   const cashEquivValue = secs.filter((h) => h.cls.group === "Cash").reduce((s, h) => s + h.value, 0);
   const cashTotal = CASH_V + cashEquivValue;
   const investCost = investable.reduce((s, h) => s + h.cost, 0);
-  const totRetPct = investCost > 0 ? ((holdingsValue - investCost) / investCost) * 100 : 0;
+  const investDiv = investable.reduce((s, h) => s + (divByIsin[h.isin] || 0), 0); // dividends received on held names
+  const totRetPct = investCost > 0 ? ((holdingsValue + investDiv - investCost) / investCost) * 100 : 0;
   const dayAbs = secs.reduce((s, h) => s + (h.value * h.dayPct) / 100, 0);
   const dayPct = TOTAL - dayAbs !== 0 ? (dayAbs / (TOTAL - dayAbs)) * 100 : 0;
   const divIncome = investable.reduce((s, h) => s + (h.value * h.divYield) / 100, 0);
@@ -487,10 +505,39 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
     return computePerformance(perf, benchKey, period, groups);
   }
 
+  // ---- dividends: actual received per calendar year + current-year estimate ----
+  const divByYear: Record<number, number> = {};
+  for (const t of txns) {
+    if (t.category !== "dividend" || !t.date) continue;
+    const y = parseInt(t.date.slice(0, 4), 10);
+    if (y) divByYear[y] = (divByYear[y] || 0) + (t.amount || 0);
+  }
+  const curYear = new Date().getFullYear();
+  // estimated dividend income per year from CURRENT holdings (analyst DPS × shares),
+  // for the current year and the next two.
+  const futureYears = [curYear, curYear + 1, curYear + 2];
+  const estByYear: Record<number, number> = {};
+  for (const h of secs) {
+    const de = priceOf(h.isin)?.divEstimates;
+    if (!de) continue;
+    for (const y of futureYears) if (de[y] != null) estByYear[y] = (estByYear[y] || 0) + h.qty * de[y];
+  }
+  const divYears = new Set<number>(Object.keys(divByYear).map(Number));
+  futureYears.forEach((y) => divYears.add(y));
+  const dividends: DividendBar[] = [...divYears]
+    .sort((a, b) => a - b)
+    .map((year) => {
+      const actual = divByYear[year] || 0;
+      const estFull = estByYear[year] || 0;
+      // current year: estimated REMAINDER on top of what's received; future years: full estimate
+      const estimated = year === curYear ? Math.max(0, estFull - actual) : year > curYear ? estFull : 0;
+      return { year, actual, estimated };
+    });
+
   return {
     kpis, allocMap, allocModeLbl, tableGroups, holdingsGroups, assetCurrent,
     activePctNum: activePct, passivePctNum: passivePct, totalValue: TOTAL,
-    benchDefs, isHeld, companyMetrics, getPerformance, hasPrices,
+    benchDefs, isHeld, companyMetrics, getPerformance, dividends, hasPrices,
   };
 }
 
@@ -555,18 +602,20 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
   let ti = 0;
   let cashBal = 0;
   const flow: Record<Sleeve, number> = { stocks: 0, funds: 0, cash: 0 };
+  const div: Record<Sleeve, number> = { stocks: 0, funds: 0, cash: 0 };
 
   for (let gi = 0; gi < PN; gi++) {
     const gd = grid[gi];
     flow.stocks = 0; flow.funds = 0; flow.cash = 0;
+    div.stocks = 0; div.funds = 0; div.cash = 0;
     // apply all txns up to this grid point
     while (ti < dated.length && +new Date(dated[ti].date) <= gd) {
       const t = dated[ti];
       cashBal += t.amount || 0;
       const sign = shareSign(t.category);
       const k = keyOf(t);
+      const u = k ? universe.get(k) : undefined;
       if (sign !== 0 && k) {
-        const u = universe.get(k);
         held[k] = (held[k] || 0) + sign * t.qty;
         if (u && u.sleeve !== "cash") {
           // external flow into the sleeve (market value for transfers, cash for trades)
@@ -575,6 +624,10 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
           else if (t.category === "transfer_in") flow[u.sleeve] += t.qty * asOf(u.hist, +new Date(t.date), u.fb);
           else if (t.category === "transfer_out") flow[u.sleeve] -= t.qty * asOf(u.hist, +new Date(t.date), u.fb);
         }
+      } else if (t.category === "dividend" && u && u.sleeve !== "cash") {
+        // dividend cash leaves the instrument (ex-div price drop is in the series) but
+        // is retained → credit it to the sleeve's return so this is a TOTAL return.
+        div[u.sleeve] += t.amount || 0;
       }
       ti++;
     }
@@ -587,8 +640,8 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
     if (gi === 0) { rStocks.push(0); rFunds.push(0); }
     else {
       const ps = stocksValue[gi - 1], pf = fundsValue[gi - 1];
-      rStocks.push(ps > 0 ? (vs - ps - flow.stocks) / ps : 0);
-      rFunds.push(pf > 0 ? (vf - pf - flow.funds) / pf : 0);
+      rStocks.push(ps > 0 ? (vs - ps - flow.stocks + div.stocks) / ps : 0);
+      rFunds.push(pf > 0 ? (vf - pf - flow.funds + div.funds) / pf : 0);
     }
   }
 

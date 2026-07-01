@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store/useStore";
 import { researchByTab, mapRes, type ResTab } from "../data/research";
 import ResearchCard from "../components/ResearchCard";
+import WatchlistPanel from "../components/WatchlistPanel";
 
 const TABS: { k: ResTab; label: string }[] = [
   { k: "equity", label: "Equity research" },
@@ -13,6 +15,8 @@ export default function ResearchScreen() {
   const navigate = useNavigate();
   const resTab = useStore((s) => s.resTab);
   const setResTab = useStore((s) => s.setResTab);
+  const watchlist = useStore((s) => s.watchlist);
+  const [showWatchlist, setShowWatchlist] = useState(false);
   const items = researchByTab(resTab).map(mapRes);
 
   return (
@@ -21,7 +25,9 @@ export default function ResearchScreen() {
         <div>
           <div className="ttl">Research</div>
           <div className="asof">
-            Reports & news for your portfolio and watchlist — sourced via the Inderes connector (MCP)
+            {showWatchlist
+              ? `Companies you're considering — ${watchlist.length} tracked. Notes are saved and survive portfolio updates.`
+              : "Reports & news for your portfolio and watchlist — sourced via the Inderes connector (MCP)"}
           </div>
         </div>
         <div className="ressrc">
@@ -31,17 +37,28 @@ export default function ResearchScreen() {
       </div>
       <div className="tabsrow">
         {TABS.map((t) => (
-          <button key={t.k} className={"tab" + (resTab === t.k ? " on" : "")} onClick={() => setResTab(t.k)}>
+          <button
+            key={t.k}
+            className={"tab" + (!showWatchlist && resTab === t.k ? " on" : "")}
+            onClick={() => { setResTab(t.k); setShowWatchlist(false); }}
+          >
             {t.label}
           </button>
         ))}
+        <button className={"tab" + (showWatchlist ? " on" : "")} onClick={() => setShowWatchlist(true)}>
+          Watchlist
+        </button>
       </div>
       <div className="body">
-        <div className="reslist">
-          {items.map((r) => (
-            <ResearchCard key={r.id} r={r} onClick={() => navigate(`/report/${r.id}`)} />
-          ))}
-        </div>
+        {showWatchlist ? (
+          <WatchlistPanel />
+        ) : (
+          <div className="reslist">
+            {items.map((r) => (
+              <ResearchCard key={r.id} r={r} onClick={() => navigate(`/report/${r.id}`)} />
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

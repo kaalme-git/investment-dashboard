@@ -19,7 +19,9 @@ interface Row {
   onChange?: (raw: string) => void;
 }
 
-export default function StrategyScreen() {
+// Settings page — reached only via the account menu (avatar → Settings). Holds
+// the investment strategy + target allocation (formerly the "Strategy" tab).
+export default function SettingsScreen() {
   const strategyText = useStore((s) => s.strategyText);
   const setStrategyText = useStore((s) => s.setStrategyText);
   const targets = useStore((s) => s.targets);
@@ -78,7 +80,7 @@ export default function StrategyScreen() {
     <>
       <div className="subhead">
         <div>
-          <div className="ttl">Strategy</div>
+          <div className="ttl">Settings</div>
           <div className="asof">
             Your investment strategy and target allocation — read by the AI when it analyses your portfolio
           </div>

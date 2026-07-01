@@ -41,6 +41,7 @@ function metaToInfo(m, history) {
     rec: m.rec ?? null,
     targetPrice: m.target_price ?? null,
     recDate: m.rec_date ?? null,
+    divEstimates: m.div_estimates ?? null,
     history: history || [],
   };
 }
@@ -132,12 +133,13 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
         const recs = await fetchRecs(toRefresh);
         const stamp = new Date().toISOString();
         // stamp every checked ISIN (so not-found renamed ISINs aren't retried for a day);
-        // set rec fields only when Inderes returned one.
+        // set rec fields only when Inderes returned one; div_estimates = DPS estimates T/T+1/T+2.
         const rows = toRefresh.map((isin) => {
           const r = recs[isin];
-          return r?.rec
-            ? { isin, rec: r.rec, target_price: r.targetPrice, rec_date: r.recDate, rec_updated_at: stamp }
-            : { isin, rec_updated_at: stamp };
+          const base = r?.rec
+            ? { isin, rec: r.rec, target_price: r.targetPrice, rec_date: r.recDate }
+            : { isin };
+          return { ...base, div_estimates: r?.divEstimates ?? null, rec_updated_at: stamp };
         });
         await db.from("instrument_meta").upsert(rows, { onConflict: "isin" });
         for (const isin of uniq) {
