@@ -123,6 +123,14 @@ function scheduleSettingsSave(get: () => DashState) {
       targets: s.targets,
       watchlist: s.watchlist,
       notes: s.notes,
+      bench: s.bench,
+      calc: {
+        ret: s.calcRet,
+        monthly: s.calcMonthly,
+        years: s.calcYears,
+        target: s.calcTarget,
+        allocMode: s.calcAllocMode,
+      },
     }).catch(() => {});
   }, 700);
 }
@@ -235,6 +243,7 @@ interface DashState {
   calcYears: number;
   calcTarget: number | "";
   calcHover: number | null;
+  calcAllocMode: "target" | "current"; // which allocation drives the projection
 
   setBench: (b: string) => void;
   setPeriod: (p: TrendPeriod) => void;
@@ -258,6 +267,7 @@ interface DashState {
   setCalcYears: (y: number) => void;
   setCalcTarget: (raw: string) => void;
   setCalcHover: (i: number | null) => void;
+  setCalcAllocMode: (m: "target" | "current") => void;
 
   setWlTicker: (v: string) => void;
   setWlName: (v: string) => void;
@@ -370,6 +380,12 @@ export const useStore = create<DashState>((set, get) => ({
         targets: settings?.targets ?? s.targets,
         watchlist: settings?.watchlist ?? s.watchlist,
         notes: settings?.notes ?? s.notes,
+        bench: settings?.bench ?? s.bench,
+        calcRet: settings?.calc?.ret ?? s.calcRet,
+        calcMonthly: settings?.calc?.monthly ?? s.calcMonthly,
+        calcYears: settings?.calc?.years ?? s.calcYears,
+        calcTarget: settings?.calc?.target ?? s.calcTarget,
+        calcAllocMode: settings?.calc?.allocMode ?? s.calcAllocMode,
       }));
       // respect the cache on load — only refetch if prices are stale (PRICE_TTL);
       // the Refresh button forces an update on demand.
@@ -427,8 +443,9 @@ export const useStore = create<DashState>((set, get) => ({
   calcYears: 10,
   calcTarget: 1000000,
   calcHover: null,
+  calcAllocMode: "target",
 
-  setBench: (b) => set({ bench: b }),
+  setBench: (b) => { set({ bench: b }); scheduleSettingsSave(get); },
   setPeriod: (p) => set({ period: p }),
   setAllocMode: (m) => set({ allocMode: m }),
   setHoverAlloc: (i) => set({ hoverAlloc: i }),
@@ -499,17 +516,21 @@ export const useStore = create<DashState>((set, get) => ({
   setCalcRet: (label, raw) => {
     const v = raw === "" ? "" : parseFloat(raw);
     set((s) => ({ calcRet: { ...s.calcRet, [label]: typeof v === "number" && isNaN(v) ? "" : v } }));
+    scheduleSettingsSave(get);
   },
   setCalcMonthly: (raw) => {
     const v = raw === "" ? "" : parseFloat(raw);
     set({ calcMonthly: typeof v === "number" && isNaN(v) ? "" : v });
+    scheduleSettingsSave(get);
   },
-  setCalcYears: (y) => set({ calcYears: y }),
+  setCalcYears: (y) => { set({ calcYears: y }); scheduleSettingsSave(get); },
   setCalcTarget: (raw) => {
     const digits = ("" + raw).replace(/[^0-9]/g, "");
     set({ calcTarget: digits === "" ? "" : parseInt(digits, 10) });
+    scheduleSettingsSave(get);
   },
   setCalcHover: (i) => set({ calcHover: i }),
+  setCalcAllocMode: (m) => { set({ calcAllocMode: m }); scheduleSettingsSave(get); },
 
   setWlTicker: (v) => set({ wlTicker: v }),
   setWlName: (v) => set({ wlName: v }),

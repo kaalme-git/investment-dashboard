@@ -1,6 +1,7 @@
 import { useStore } from "../store/useStore";
 import { eur } from "../data/format";
 import ProjectionChart from "../charts/ProjectionChart";
+import IconChevronDown from "../icons/chevronDown";
 
 const CALC_C = ["Equities", "Fixed income", "Alternatives", "Cash & equivalent"];
 const EDIT_LABELS = ["Equities", "Fixed income", "Alternatives"];
@@ -13,24 +14,32 @@ export default function CalculationsScreen() {
   const calcYears = useStore((s) => s.calcYears);
   const calcTarget = useStore((s) => s.calcTarget);
   const calcHover = useStore((s) => s.calcHover);
+  const calcAllocMode = useStore((s) => s.calcAllocMode);
   const targets = useStore((s) => s.targets);
   const setCalcRet = useStore((s) => s.setCalcRet);
   const setCalcMonthly = useStore((s) => s.setCalcMonthly);
   const setCalcYears = useStore((s) => s.setCalcYears);
   const setCalcTarget = useStore((s) => s.setCalcTarget);
   const setCalcHover = useStore((s) => s.setCalcHover);
+  const setCalcAllocMode = useStore((s) => s.setCalcAllocMode);
   const assetCurrent = useStore((s) => s.portfolio.assetCurrent);
   const totalValue = useStore((s) => s.portfolio.totalValue);
 
-  // target-allocation weights for new money (cash = remainder), matching Strategy
+  // target-allocation weights (cash = remainder), matching the Strategy tab
   const editSum = EDIT_LABELS.reduce((s, l) => s + numv(targets[l]), 0);
   const cashTgt = Math.max(0, 100 - editSum);
   const effTgt = (l: string) => (l === "Cash & equivalent" ? cashTgt : numv(targets[l]));
 
+  // The projection uses the SELECTED allocation for both the starting split and
+  // where new money goes — so the blended return reflects that allocation.
+  //  • "current"  → your allocation right now (assetCurrent)
+  //  • "target"   → your target allocation (assumes you rebalance to it)
+  const weightPct = (l: string) => (calcAllocMode === "target" ? effTgt(l) : assetCurrent[l] || 0);
+
   const startV: Record<string, number> = {};
-  CALC_C.forEach((l) => (startV[l] = ((assetCurrent[l] || 0) / 100) * totalValue));
+  CALC_C.forEach((l) => (startV[l] = (weightPct(l) / 100) * totalValue));
   const cw: Record<string, number> = {};
-  CALC_C.forEach((l) => (cw[l] = effTgt(l) / 100));
+  CALC_C.forEach((l) => (cw[l] = weightPct(l) / 100));
 
   const monthly = numv(calcMonthly);
   const years = calcYears;
@@ -123,8 +132,18 @@ export default function CalculationsScreen() {
               </div>
             </div>
             <div className="calfi">
-              <span className="calfk">New money invested at</span>
-              <span className="calfv">target allocation</span>
+              <span className="calfk">Allocation basis</span>
+              <div className="selwrap">
+                <select
+                  className="sel"
+                  value={calcAllocMode}
+                  onChange={(e) => setCalcAllocMode(e.target.value as "target" | "current")}
+                >
+                  <option value="target">Target allocation</option>
+                  <option value="current">Current allocation</option>
+                </select>
+                <IconChevronDown className="selcv" size="16" />
+              </div>
             </div>
           </div>
         </div>

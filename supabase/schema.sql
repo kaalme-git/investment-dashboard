@@ -88,8 +88,13 @@ create table if not exists public.user_settings (
   targets    jsonb,
   watchlist  jsonb,
   notes      jsonb,
+  bench      text,   -- Overview benchmark selection
+  calc       jsonb,  -- Calculations inputs (returns, monthly, years, target, allocMode)
   updated_at timestamptz default now()
 );
+-- If the table already exists from an earlier run:
+alter table public.user_settings add column if not exists bench text;
+alter table public.user_settings add column if not exists calc jsonb;
 alter table public.user_settings enable row level security;
 drop policy if exists "own settings" on public.user_settings;
 create policy "own settings" on public.user_settings
