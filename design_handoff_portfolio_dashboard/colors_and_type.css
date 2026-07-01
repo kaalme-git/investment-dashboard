@@ -1,0 +1,379 @@
+/* =========================================================================
+   Inderes Design System — Colors & Type
+   -------------------------------------------------------------------------
+   Extracted from the production Next.js codebase
+   (nextjs/assets/styles/settings.scss + mixins.scss + base/fonts.scss)
+   and cross-referenced against the Figma file's /Brand page.
+
+   Inderes is a Finnish investor-media platform. Its visual language is
+   editorial first: near-black on white, a single vivid blue accent
+   (#0000E6 in brand; #2E2EFF in practice for chrome/charts), tight type
+   with the condensed GT America family, and a monospace voice for
+   numbers (Inconsolata + Chivo Mono blended for digits).
+
+   FONTS
+   -----
+   "Inderes"       → GT America (Condensed for headlines, Standard for body)
+                     Licensed webfont. Fallback to system-ui, Arial.
+   "Inderes Mono"  → Inconsolata (base) + Chivo Mono (digits only, via
+                     unicode-range). Used for tickers, prices, deltas.
+
+   The lowercase-wordmark logo and the condensed headlines are the two
+   unmistakable signatures of the brand. Do not substitute GT America
+   Condensed with a regular sans — the visual feel collapses.
+   ========================================================================= */
+
+/* ---------- @font-face ---------- */
+
+@font-face { /* Showcase / display */
+  font-family: "Inderes";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("fonts/inde-GT-America-Condensed-Black.woff2") format("woff2");
+}
+@font-face { /* Headings */
+  font-family: "Inderes";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/inde-GT-America-Condensed-Bold.woff2") format("woff2");
+}
+@font-face { /* Strong / UI labels */
+  font-family: "Inderes";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/inde-GT-America-Condensed-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inderes";
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/inde-GT-America-Condensed-Medium-Italic.woff2") format("woff2");
+}
+@font-face { /* Body */
+  font-family: "Inderes";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/inde-GT-America-Standard-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inderes";
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/inde-GT-America-Standard-Regular-Italic.woff2") format("woff2");
+}
+@font-face { /* Mono — general */
+  font-family: "Inderes Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/Inconsolata-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inderes Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/Inconsolata-SemiBold.woff2") format("woff2");
+}
+@font-face { /* Mono — digits only, for tickers / prices */
+  font-family: "Inderes Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ChivoMono-Regular.woff2") format("woff2");
+  unicode-range: U+0030-0039, U+0025, U+002C, U+002D, U+002E, U+003A, U+003B, U+003D, U+005C, U+005F, U+007C, U+002F;
+}
+
+/* =========================================================================
+   TOKENS — light theme (default)
+   ========================================================================= */
+:root {
+
+  /* ------- Type stack ------- */
+  --font-family: "Inderes", "GT America", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-family-mono: "Inderes Mono", "Inconsolata", "JetBrains Mono", ui-monospace, monospace;
+  --letter-spacing: 0.0156em;
+
+  /* ------- Base palette (foreground / surface / border) -------
+     Name pattern = role-weight. "fg" = text, "bg" = surface,
+     "br" = border. Semantic aliases follow below. */
+
+  /* White / black */
+  --c-fg-on-dark:        #ffffff;
+  --c-bg-surface:        #ffffff;  /* body background */
+  --c-br-surface:        #ffffff;
+
+  --c-fg-strong:         #000000;  /* body text, logos */
+  --c-bg-inverse:        #000000;  /* dark CTA, footer */
+  --c-br-inverse:        #000000;
+
+  /* Greys — a tight 5-step scale, warm-neutral */
+  --c-fg-muted:          #474747;  /* secondary text */
+  --c-fg-subtle:         #757575;  /* captions, meta */
+  --c-br-subtle:         #e7e7e7;  /* card dividers */
+  --c-br-muted:          #d9d9d9;  /* inputs */
+  --c-bg-muted:          #efefef;  /* tag / filled cta */
+  --c-bg-subtle:         #f8f8f8;  /* alt row */
+  --c-bg-elevated:       #f0f0f0;  /* hover-grey */
+
+  /* Brand blue — the single vivid accent */
+  --c-brand-blue:        #0000e6;  /* primary (links, CTA, key chart line) */
+  --c-brand-blue-ink:    #2e2eff;  /* in-figma usage, charts, diagrams */
+  --c-brand-blue-dark:   #0051ad;  /* visited / hover on blue text */
+  --c-bg-blue-tint:      #f3f5ff;  /* blue-light surface */
+  --c-br-blue-tint:      #ecf8ff;
+  --c-bg-blue-sky:       #d4e2ff;  /* support, callouts */
+  --c-br-blue-sky:       #c3d7ff;
+  --c-bg-blue-lavender:  #f6f6ff;  /* bordered box inner */
+  --c-br-blue-lavender:  #ececff;
+  --c-bg-blue-purple:    #f5f5ff;  /* gradient seed */
+
+  /* Brand support (from /Brand/Colors/) */
+  --c-support-lime:      #d4fcb3;  /* "Lime" — rare, brand accent */
+  --c-support-red-light: #fccebe;  /* "Light Red" */
+  --c-support-purple:    #c49cff;  /* "Purple" */
+  --c-support-green:     #91a77f;  /* "Earthy Green" */
+
+  /* Semantic — status */
+  --c-fg-error:          #ad0101;
+  --c-bg-error:          #fff7f5;
+  --c-br-error:          #ad0101;
+  --c-fg-success:        #256100;
+  --c-bg-success:        #eefff7;
+  --c-br-success:        #256100;
+  --c-fg-warning:        #7a3e00;
+  --c-bg-warning:        #ffeacc;
+  --c-br-warning:        #ffa31c;
+  --c-fg-info:           #0051ad;
+  --c-bg-info:           #f3f5ff;
+  --c-br-info:           #0051ad;
+
+  /* Live / notification / premium */
+  --c-live-red:          #f00;
+  --c-notif-red-bg:      #feeee8;
+  --c-premium:           #ffa31c;
+  --c-premium-tint:      #ffeacc;
+
+  /* Recommendations — Buy / Accumulate / Reduce / Sell / Hold */
+  --c-rec-buy:           #489930;
+  --c-rec-accu:          #778e63;
+  --c-rec-redu:          #d0553a;
+  --c-rec-sell:          #c32925;
+  --c-rec-hold:          #7a7a7a;
+
+  /* Gradients (signature — lavender wash on headers / menu) */
+  --g-purple:            linear-gradient(121.63deg, #f7f7fd 28.48%, #f5f5ff 100%);
+  --g-fade-top:          linear-gradient(180deg, #fff 0%, #fff0 100%);
+  --g-fade-bottom:       linear-gradient(0deg,   #fff 0%, #fff0 100%);
+  --g-video-link:        linear-gradient(0deg, var(--c-bg-elevated) 0%,
+                                         var(--c-bg-elevated) 80%, transparent 100%);
+
+  /* ------- Legacy / semantic aliases (match production var names) ------- */
+  --text-light:              var(--c-fg-on-dark);
+  --text-dark:               var(--c-fg-strong);
+  --text-gray:               var(--c-fg-muted);
+  --text-gray-dark:          var(--c-fg-subtle);
+  --text-blue:               var(--c-brand-blue);
+  --text-blue-dark:          var(--c-brand-blue-dark);
+  --text-red:                var(--c-fg-error);
+  --text-green:              var(--c-fg-success);
+  --background-light:        var(--c-bg-surface);
+  --background-dark:         var(--c-bg-inverse);
+  --background-gray:         var(--c-bg-muted);
+  --background-gray-light:   var(--c-bg-subtle);
+  --background-gray-dark:    var(--c-bg-elevated);
+  --background-blue:         var(--c-brand-blue);
+  --background-blue-light:   var(--c-bg-blue-tint);
+  --background-blue-sky:     var(--c-bg-blue-sky);
+  --background-lavender:     var(--c-bg-blue-lavender);
+  --background-gradient-purple: var(--g-purple);
+  --border-light:            var(--c-br-surface);
+  --border-dark:             var(--c-br-inverse);
+  --border-gray:             var(--c-br-subtle);
+  --border-gray-dark:        var(--c-br-muted);
+  --border-blue:             var(--c-brand-blue);
+  --premium-orange:          var(--c-premium);
+  --premium-orange-light:    var(--c-premium-tint);
+  --live-red:                var(--c-live-red);
+
+  /* ------- Elevation, radii, spacing, chrome ------- */
+  --radius-xs:      0.25rem;
+  --radius-sm:      0.5rem;
+  --radius-md:      0.75rem;   /* common card */
+  --radius-lg:      1rem;
+  --radius-pill:    1.5em;     /* CTA — the pill is the house shape */
+  --border-radius-base: 0.5rem;
+
+  --shadow-sm:   0 0 1em -0.5em rgba(0 8 37 / 21%);
+  --shadow-md:   0 2px 24px -15px rgb(0 8 37 / 75%);
+  --shadow-lg:   0 4px 24px -6px #00082459;
+  --box-shadow:        var(--shadow-sm);
+  --box-shadow-strong: var(--shadow-md);
+  --drop-shadow:       var(--shadow-lg);
+
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --header-sticky-height: 56px;
+  --layout-wrapper-max-width: 90rem;
+  --layout-content-max-width: 82.5rem;
+  --grid-width: 1206px;
+
+  --background-blur: blur(4px);
+  --text-blur:       blur(2.5px);
+
+  /* ------- Type scale (mirrors mixins.scss, desktop sizes) ------- */
+  --fs-display:     2.25rem;   /* h1Showcase, UPPERCASE */
+  --lh-display:     1;
+  --fs-h1:          2.25rem;   /* desktop h1 */
+  --lh-h1:          1.12;
+  --fs-h2:          2rem;
+  --lh-h2:          1.26;
+  --fs-h3:          1.75rem;
+  --lh-h3:          1.28;
+  --fs-h4:          1.5rem;
+  --lh-h4:          1.26;
+  --fs-h5:          1.25rem;
+  --lh-h5:          1.6;
+  --fs-h6:          1.125rem;
+  --lh-h6:          1.34;
+  --fs-p:           1.125rem;  /* body */
+  --lh-p:           1.5555555556;
+  --fs-p-sm:        1rem;
+  --lh-p-sm:        1.5;
+  --fs-text-sm:     0.875rem;  /* meta, captions */
+  --lh-text-sm:     1.5714285714;
+  --fs-label:       1rem;
+  --lh-label:       1.25;
+  --fs-button:      1rem;
+  --lh-button:      1.25;
+
+  /* Breakpoints (reference) */
+  --bp-mobile-max:  786px;
+  --bp-tablet-min:  787px;
+  --bp-tablet-max:  1033px;
+  --bp-desktop-min: 1034px;
+  --bp-desktop-max: 1543px;
+}
+
+/* =========================================================================
+   Dark theme — production Inderes has a dedicated dark mode.
+   Toggled with [data-theme="dark"].
+   ========================================================================= */
+[data-theme="dark"] {
+  --c-fg-on-dark:        #e0e0e0;
+  --c-bg-surface:        #000000;
+  --c-br-surface:        #131313;
+  --c-fg-strong:         #e0e0e0;
+  --c-bg-inverse:        #1d1d1d;
+  --c-br-inverse:        #9b9b9b;
+  --c-fg-muted:          #a8a8a8;
+  --c-fg-subtle:         #a8a8a8;
+  --c-br-subtle:         #262626;
+  --c-br-muted:          #393939;
+  --c-bg-muted:          #171717;
+  --c-bg-subtle:         #171717;
+  --c-bg-elevated:       #282828;
+  --c-brand-blue:        #0078ff;
+  --c-brand-blue-dark:   #0078ff;
+  --c-bg-blue-tint:      #171717;
+  --c-br-blue-tint:      #262626;
+  --c-bg-blue-lavender:  #171717;
+  --c-br-blue-lavender:  #262626;
+  --c-fg-error:          #ffb3b3;
+  --c-bg-error:          #3d1a1a;
+  --c-fg-success:        #b3ffd1;
+  --c-bg-success:        #164126;
+  --g-purple:            linear-gradient(121.63deg, #131313 0%, #171717 28.48%, #171717 100%);
+  --g-fade-top:          linear-gradient(180deg, #070707 0%, #07070700 100%);
+  --g-fade-bottom:       linear-gradient(0deg,   #070707 0%, #07070700 100%);
+}
+
+/* =========================================================================
+   Semantic type classes — use these directly on elements.
+   ========================================================================= */
+
+html {
+  font-size: 16px;
+  line-height: 1;
+  text-size-adjust: 100%;
+}
+body {
+  font-family: var(--font-family);
+  color: var(--text-dark);
+  background: var(--background-light);
+  text-rendering: optimizelegibility;
+  font-feature-settings: "calt", "clig", "kern", "liga", "locl", "rlig";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: inherit;
+  font-weight: 700;            /* GT America Condensed Bold */
+  margin: 0;
+  letter-spacing: var(--letter-spacing);
+}
+
+h1, .h1 { font-size: var(--fs-h1); line-height: var(--lh-h1); }
+h2, .h2 { font-size: var(--fs-h2); line-height: var(--lh-h2); }
+h3, .h3 { font-size: var(--fs-h3); line-height: var(--lh-h3); }
+h4, .h4 { font-size: var(--fs-h4); line-height: var(--lh-h4); }
+h5, .h5 { font-size: var(--fs-h5); line-height: var(--lh-h5); }
+h6, .h6 { font-size: var(--fs-h6); line-height: var(--lh-h6); }
+
+.display {                     /* Showcase — uppercase */
+  font-family: inherit;
+  font-weight: 800;            /* GT America Condensed Black */
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+p, .p {
+  font-size: var(--fs-p);
+  line-height: var(--lh-p);
+  margin: 1em 0 0;
+}
+.p-sm    { font-size: var(--fs-p-sm);    line-height: var(--lh-p-sm); }
+.text-sm { font-size: var(--fs-text-sm); line-height: var(--lh-text-sm);
+           letter-spacing: var(--letter-spacing); }
+.meta    { font-size: var(--fs-text-sm); color: var(--c-fg-subtle); }
+
+.label   { font-size: var(--fs-label);  line-height: var(--lh-label);  font-weight: 600; }
+.button  { font-size: var(--fs-button); line-height: var(--lh-button); font-weight: 600;
+           letter-spacing: var(--letter-spacing); }
+
+.mono           { font-family: var(--font-family-mono); }
+.num  {                          /* Numbers in the mono voice */
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "zero";
+}
+
+b, strong { font-weight: 600; letter-spacing: var(--letter-spacing); }
+
+a {
+  color: var(--text-blue);
+  text-decoration: none;
+}
+a:hover  { color: var(--text-blue-dark); }
+a:focus  { color: var(--text-blue-dark); text-decoration: underline; }
+
+::selection { color: var(--text-light); background: var(--background-blue); }

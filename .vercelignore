@@ -1,0 +1,12 @@
+design_handoff_portfolio_dashboard
+memory
+MEMORY.md
+node_modules
+.claude
+.preview
+.mcp.json
+pricecache
+.env.local
+.env*.local
+NordnetData
+dist

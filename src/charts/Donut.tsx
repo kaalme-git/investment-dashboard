@@ -1,0 +1,53 @@
+import type { AllocSeg } from "../data/types";
+
+interface Props {
+  segs: AllocSeg[];
+  size?: number;
+  thick?: number;
+  hoverIdx?: number | null;
+  onEnter?: (i: number) => void;
+  onLeave?: () => void;
+}
+
+/** Donut chart — ported from the prototype's donut(). Hovering a slice grows it
+ *  and dims the others (shared via hoverIdx). */
+export default function Donut({ segs, size = 200, thick = 30, hoverIdx = null, onEnter, onLeave }: Props) {
+  const r = size / 2 - thick / 2 - 3;
+  const cx = size / 2;
+  const cy = size / 2;
+  const C = 2 * Math.PI * r;
+  let acc = 0;
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
+      {segs.map((s, i) => {
+        const len = (s.pctNum / 100) * C;
+        const on = hoverIdx === i;
+        const dim = hoverIdx != null && !on;
+        const offset = -acc;
+        acc += len;
+        return (
+          <circle
+            key={i}
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={on ? thick + 7 : thick}
+            strokeDasharray={`${len} ${C - len}`}
+            strokeDashoffset={offset}
+            transform={`rotate(-90 ${cx} ${cy})`}
+            onMouseEnter={onEnter ? () => onEnter(i) : undefined}
+            onMouseLeave={onLeave}
+            style={{
+              opacity: dim ? 0.32 : 1,
+              cursor: onEnter ? "pointer" : "default",
+              transition: "stroke-width .16s ease, opacity .16s ease",
+            }}
+          />
+        );
+      })}
+    </svg>
+  );
+}

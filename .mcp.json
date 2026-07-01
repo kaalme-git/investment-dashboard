@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "stockflow": {
+      "command": "C:/Users/KasperMellas/mcp-servers/mcp-stockflow/.venv/Scripts/python.exe",
+      "args": ["C:/Users/KasperMellas/mcp-servers/mcp-stockflow/stockflow.py"]
+    }
+  }
+}

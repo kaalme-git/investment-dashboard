@@ -1,0 +1,43 @@
+2026-07-01 15:24:41,813 - stockflow-server-v2 - INFO - Starting Stockflow server v2...
+2026-07-01 15:24:41,846 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-07-01 15:26:33,798 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:31:43,619 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:31:51,778 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:31:53,982 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:31:56,274 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:01,107 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:10,434 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:12,972 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:13,688 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:15,074 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:16,573 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:17,369 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:18,144 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:18,910 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:19,859 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:21,190 - yfinance - ERROR - HTTP Error 404: {"quoteSummary":{"result":null,"error":{"code":"Not Found","description":"Quote not found for symbol: ^990100"}}}
+2026-07-01 15:35:21,963 - yfinance - ERROR - $^990100: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+2026-07-01 15:35:21,967 - yfinance - ERROR - 
+1 Failed download:
+2026-07-01 15:35:21,967 - yfinance - ERROR - ['^990100']: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+2026-07-01 15:35:21,995 - stockflow-server-v2 - ERROR - API error in get_historical_data_v2: No historical data available for ^990100
+Traceback (most recent call last):
+  File "C:\Users\KasperMellas\mcp-servers\mcp-stockflow\stockflow.py", line 266, in call_tool
+    raise APIError(f"No historical data available for {symbol}")
+APIError: No historical data available for ^990100
+
+2026-07-01 15:35:21,996 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:53,599 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:35:55,360 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:36:44,735 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:36:47,160 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:36:48,492 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:36:50,586 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:36:52,147 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:36:53,554 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:41:13,266 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:44:23,954 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 15:49:18,450 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 16:01:04,366 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 16:01:07,709 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-01 16:01:10,384 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest

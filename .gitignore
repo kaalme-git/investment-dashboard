@@ -1,0 +1,22 @@
+node_modules
+dist
+dist-ssr
+.preview
+*.local
+.vercel
+.env
+.env.*
+!.env.example
+.DS_Store
+npm-debug.log*
+pricecache
+
+# local secrets
+.env.local
+.env*.local
+
+.vercel
+.env*
+
+# personal data — never commit (each user's data lives in Supabase)
+NordnetData
