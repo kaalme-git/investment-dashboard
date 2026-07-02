@@ -188,7 +188,8 @@ interface Sec {
   value: number;
   dayPct: number;
   totalPct: number;
-  divYield: number;
+  divYield: number; // trailing 12-month dividend yield (Yahoo)
+  fwdYield: number; // forward yield: next-year analyst DPS / price, else trailing
   seed: number;
   cls: Cls;
   region: string;
@@ -279,6 +280,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   }
 
   // ---- current securities ----
+  const NEXT_YEAR = new Date().getFullYear() + 1; // forward-yield reference year
   const secs: Sec[] = Object.values(pos)
     .filter((p) => p.qty > 1e-6)
     .map((p) => {
@@ -290,6 +292,10 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       const cost = p.cost;
       const divRecv = divByIsin[p.isin] || 0; // dividends received while holding
       const rd = recOf(info?.rec);
+      // forward dividend yield: next-year Inderes DPS estimate ÷ current price;
+      // fall back to the trailing Yahoo yield when there's no analyst estimate.
+      const nextDps = info?.divEstimates?.[NEXT_YEAR];
+      const fwdYield = nextDps != null && last > 0 ? (nextDps / last) * 100 : info?.divYield || 0;
       return {
         isin: p.isin,
         name: p.name,
@@ -301,6 +307,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
         dayPct: prev ? (last / prev - 1) * 100 : 0,
         totalPct: cost > 0 ? ((value + divRecv - cost) / cost) * 100 : 0,
         divYield: info?.divYield || 0,
+        fwdYield,
         seed: hashInt(p.isin),
         cls,
         region: normRegion(info?.country, cls.sleeve !== "stocks"),
@@ -333,7 +340,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   const totRetPct = investCost > 0 ? ((holdingsValue + investDiv - investCost) / investCost) * 100 : 0;
   const dayAbs = secs.reduce((s, h) => s + (h.value * h.dayPct) / 100, 0);
   const dayPct = TOTAL - dayAbs !== 0 ? (dayAbs / (TOTAL - dayAbs)) * 100 : 0;
-  const divIncome = investable.reduce((s, h) => s + (h.value * h.divYield) / 100, 0);
+  const divIncome = investable.reduce((s, h) => s + (h.value * h.fwdYield) / 100, 0); // forward (est.) income
   const divYield = (divIncome / safeTotal) * 100;
   const passiveValue = secs.filter((h) => h.cls.typeAP === "passive").reduce((s, h) => s + h.value, 0);
   const passivePct = (passiveValue / safeTotal) * 100;
@@ -453,7 +460,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       dayCls: h.dayPct >= 0 ? "up" : "down",
       totalStr: sgn(h.totalPct),
       totCls: h.totalPct >= 0 ? "up" : "down",
-      yieldStr: h.divYield ? h.divYield.toFixed(1) + "%" : "—",
+      yieldStr: h.fwdYield ? h.fwdYield.toFixed(1) + "%" : "—",
       weightStr: ((h.value / safeTotal) * 100).toFixed(1) + "%",
       recShort: h.recShort,
       recCls: h.recCls,
@@ -493,7 +500,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       weightStr: ((h.value / safeTotal) * 100).toFixed(1) + "%",
       sharesStr: h.qty.toLocaleString("en-US", { maximumFractionDigits: 2 }),
       avgStr: "€" + (h.qty ? h.cost / h.qty : 0).toFixed(2),
-      yieldStr: h.divYield ? h.divYield.toFixed(1) + "%" : "—",
+      yieldStr: h.fwdYield ? h.fwdYield.toFixed(1) + "%" : "—",
       recShort: h.recShort,
       recCls: h.recCls,
       targetStr: h.targetPrice ? "€" + h.targetPrice.toFixed(2) : "—",
@@ -517,14 +524,19 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
     if (y) divByYear[y] = (divByYear[y] || 0) + (t.amount || 0);
   }
   const curYear = new Date().getFullYear();
-  // estimated dividend income per year from CURRENT holdings (analyst DPS × shares),
-  // for the current year and the next two.
+  // estimated dividend income per year from CURRENT holdings, for the current year
+  // and the next two. Prefer the Inderes analyst DPS estimate (DPS × shares); when a
+  // holding has no estimate for a given year, fall back to its trailing dividend rate
+  // (current value × trailing yield) — the same fallback the Holdings "Yield" uses.
   const futureYears = [curYear, curYear + 1, curYear + 2];
   const estByYear: Record<number, number> = {};
   for (const h of secs) {
     const de = priceOf(h.isin)?.divEstimates;
-    if (!de) continue;
-    for (const y of futureYears) if (de[y] != null) estByYear[y] = (estByYear[y] || 0) + h.qty * de[y];
+    const trailing = h.divYield > 0 ? (h.value * h.divYield) / 100 : 0;
+    for (const y of futureYears) {
+      const est = de && de[y] != null ? h.qty * de[y] : trailing;
+      if (est) estByYear[y] = (estByYear[y] || 0) + est;
+    }
   }
   const divYears = new Set<number>(Object.keys(divByYear).map(Number));
   futureYears.forEach((y) => divYears.add(y));

@@ -59,9 +59,10 @@ export default function HoldingsTab() {
         ))}
       </div>
       <div className="srcnote">
-        Positions are built from your imported transactions (Transactions tab). Market prices, day change, total return
-        and dividend yields come from the connected market-data source; recommendations reflect current Inderes analyst
-        ratings.
+        Positions are built from your imported transactions (Transactions tab). Market prices, day change and total
+        return come from the connected market-data source. Yield is a forward yield — next-year Inderes dividend
+        estimate ÷ current price, falling back to the trailing market yield when no estimate exists. Recommendations
+        reflect current Inderes analyst ratings.
       </div>
     </>
   );

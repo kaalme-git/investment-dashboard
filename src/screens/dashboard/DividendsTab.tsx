@@ -107,9 +107,9 @@ export default function DividendsTab() {
       )}
 
       <div className="srcnote">
-        The estimated future dividends are the analyst-estimated dividends for your current holdings, shown as the
-        hatched remainder on top of what you've already received. Includes only companies with dividend estimates
-        available.
+        The estimated future dividends are for your current holdings, shown as the hatched remainder on top of what
+        you've already received. They use Inderes analyst dividend estimates where available, and fall back to each
+        company's trailing dividend rate otherwise.
       </div>
     </>
   );
