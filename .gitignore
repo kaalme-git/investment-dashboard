@@ -6,7 +6,6 @@ dist-ssr
 .vercel
 .env
 .env.*
-!.env.example
 .DS_Store
 npm-debug.log*
 pricecache
@@ -25,5 +24,3 @@ NordnetData
 _*.mjs
 _*.json
 
-# template with placeholders only — safe and meant to be public
-!.env.example

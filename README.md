@@ -34,9 +34,10 @@ node dev-server.mjs            # price API on :5174 (reads .env.local)
 npm run dev                    # app on http://localhost:5173 (proxies /api → :5174)
 ```
 
-Copy `.env.example` → `.env.local` and fill in the Supabase keys (see
-[SUPABASE_SETUP.md](SUPABASE_SETUP.md)). Without them the app runs in single-user
-local mode (localStorage, no login).
+Create a `.env.local` (git-ignored) with your Supabase keys — see
+[SUPABASE_SETUP.md](SUPABASE_SETUP.md) for the variable names. Without them the app
+runs in single-user local mode (localStorage, no login). Optional: `GROQ_API_KEY`
+(free, console.groq.com) enables the "Ask about my portfolio" assistant.
 
 ```bash
 npm run build                  # type-check + production build into dist/

@@ -19,7 +19,7 @@ This is the only part that needs your interactive login. ~10 minutes.
    "Confirm email" so accounts work instantly; turn it back on before sharing widely.
 
 ## 4. Give me the keys
-From **Project Settings → API**, copy these into a new file `.env.local` (see `.env.example`):
+From **Project Settings → API**, copy these into a new file `.env.local` (git-ignored):
 
 - **Project URL** → `VITE_SUPABASE_URL`
 - **anon / public** key → `VITE_SUPABASE_ANON_KEY`
