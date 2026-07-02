@@ -16,7 +16,7 @@ const LOCAL_MODE = !supabaseEnabled;
 
 // ---- persistence helpers (transactions + fetched prices survive reloads) ----
 const LS_TXNS = "pf_txns";
-const LS_PRICES = "pf_prices_v3"; // bump to invalidate caches (v3: backfilled history + fixed fallback prices)
+const LS_PRICES = "pf_prices_v4"; // bump to invalidate caches (v4: fund sector weightings + region hints)
 const PRICE_TTL = 6 * 60 * 60 * 1000; // don't auto-refresh prices more than every 6h on reload; the Refresh button forces it, and the server cache throttles Yahoo further
 
 function dedupeTxns(txns: Txn[]): Txn[] {
