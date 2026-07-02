@@ -1,7 +1,9 @@
+import { useNavigate } from "react-router-dom";
 import { useStore } from "../../../store/useStore";
 import Sparkline from "../../../charts/Sparkline";
 
 export default function OverviewTable() {
+  const navigate = useNavigate();
   const tableGroups = useStore((s) => s.portfolio.tableGroups);
   return (
     <div className="card dtablecard t10">
@@ -24,8 +26,14 @@ export default function OverviewTable() {
             <span className="num dgw">{g.pctStr}</span>
             <span className="num dgv">{g.valueStr}</span>
           </div>
-          {g.rows.map((h) => (
-            <div className="dtrow" key={h.ticker}>
+          {g.rows.map((h) => {
+            const clickable = h.ticker !== "CASH";
+            return (
+            <div
+              className={"dtrow" + (clickable ? " dtclick" : "")}
+              key={h.ticker}
+              onClick={clickable ? () => navigate(`/company/${encodeURIComponent(h.ticker)}`) : undefined}
+            >
               <span className="num dtick">{h.ticker}</span>
               <span className="dname">{h.name}</span>
               <span className="c">
@@ -41,7 +49,8 @@ export default function OverviewTable() {
                 <span className={"rec " + h.recCls}>{h.recShort}</span>
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       ))}
     </div>

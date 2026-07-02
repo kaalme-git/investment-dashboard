@@ -61,6 +61,26 @@ export interface CompanyMetrics {
   recShort: string;
   recCls: string;
   targetStr: string;
+  // which allocation buckets this instrument is sorted into (per view)
+  bucketSector: string; // stock → its sector; equity fund → "Look-through"; FI → "Fixed income"; cash → "Cash"
+  bucketRegion: string;
+  bucketAsset: string; // Stocks | Equity funds | Fixed income | Cash & equivalents
+  bucketStyle: string; // Active | Passive | Cash & equivalents (effective, incl. override)
+  fundSectors: { label: string; pctStr: string }[] | null; // equity funds: look-through sector split
+  clsVars: { k: string; v: string }[]; // raw variables used to derive the buckets
+  isin: string; // for setting a per-instrument style override
+  styleAuto: string; // the auto (non-overridden) style classification
+  styleOverridden: boolean; // whether the user has manually set active/passive
+}
+
+/** One instrument's contribution to an allocation bucket (drill-down detail). */
+export interface AllocContribution {
+  ticker: string;
+  name: string;
+  value: number; // contributed € (for sorting)
+  valueStr: string;
+  pctStr: string; // share of the whole portfolio
+  note?: string; // e.g. "24% of fund" for looked-through equity-fund slices
 }
 
 export interface PerfGroups {

@@ -108,8 +108,9 @@ export default function DividendsTab() {
 
       <div className="srcnote">
         The estimated future dividends are for your current holdings, shown as the hatched remainder on top of what
-        you've already received. They use Inderes analyst dividend estimates where available, and fall back to each
-        company's trailing dividend rate otherwise.
+        you've already received. They're based on Inderes analyst dividend estimates, falling back to Yahoo Finance
+        trailing dividend figures and then to the trailing dividends from your own transactions when an Inderes estimate
+        isn't available.
       </div>
     </>
   );

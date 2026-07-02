@@ -5,7 +5,7 @@ import IconChevronDown from "../icons/chevronDown";
 
 const CALC_C = ["Equities", "Fixed income", "Alternatives", "Cash & equivalent"];
 const EDIT_LABELS = ["Equities", "Fixed income", "Alternatives"];
-const YEARS = [5, 10, 20, 30];
+const YEARS = [10, 30, 50];
 const numv = (v: number | "") => (typeof v === "number" ? v : 0);
 
 export default function CalculationsScreen() {

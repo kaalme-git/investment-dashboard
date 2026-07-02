@@ -57,7 +57,9 @@ create table if not exists public.instrument_meta (
   target_price     double precision,
   rec_date         date,                  -- date of the analyst recommendation
   rec_updated_at   timestamptz,           -- when we last refreshed rec from Inderes (daily TTL)
-  div_estimates    jsonb                  -- analyst dividend/share estimates { year: dps } for T, T+1, T+2 (EUR)
+  div_estimates    jsonb,                 -- analyst dividend/share estimates { year: dps } for T, T+1, T+2 (EUR)
+  sector_weights   jsonb,                 -- equity-fund sector look-through { displaySector: weight 0..1 }
+  region_hint      text                   -- dominant country of a fund's top holdings (region fallback)
 );
 -- If the table already exists from an earlier run, add the Inderes columns:
 alter table public.instrument_meta add column if not exists rec text;
@@ -65,6 +67,8 @@ alter table public.instrument_meta add column if not exists target_price double 
 alter table public.instrument_meta add column if not exists rec_date date;
 alter table public.instrument_meta add column if not exists rec_updated_at timestamptz;
 alter table public.instrument_meta add column if not exists div_estimates jsonb;
+alter table public.instrument_meta add column if not exists sector_weights jsonb;
+alter table public.instrument_meta add column if not exists region_hint text;
 alter table public.instrument_meta enable row level security;
 drop policy if exists "meta readable" on public.instrument_meta;
 create policy "meta readable" on public.instrument_meta for select using (true);
@@ -92,11 +96,13 @@ create table if not exists public.user_settings (
   notes      jsonb,
   bench      text,   -- Overview benchmark selection
   calc       jsonb,  -- Calculations inputs (returns, monthly, years, target, allocMode)
+  style_overrides jsonb, -- per-instrument active/passive overrides { isin: 'active'|'passive' }
   updated_at timestamptz default now()
 );
 -- If the table already exists from an earlier run:
 alter table public.user_settings add column if not exists bench text;
 alter table public.user_settings add column if not exists calc jsonb;
+alter table public.user_settings add column if not exists style_overrides jsonb;
 alter table public.user_settings enable row level security;
 drop policy if exists "own settings" on public.user_settings;
 create policy "own settings" on public.user_settings

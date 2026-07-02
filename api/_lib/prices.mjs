@@ -36,6 +36,31 @@ async function fxConverter(cur, period1) {
 // Yahoo symbol so index/ticker lookups aren't hijacked by fuzzy ISIN search.
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
 
+// Yahoo topHoldings.sectorWeightings keys → display labels (aligned with the
+// stock sector labels produced by normSector in live.ts) for equity-fund look-through.
+const FUND_SECTOR = {
+  technology: "Technology",
+  financial_services: "Financials",
+  consumer_cyclical: "Consumer disc.",
+  consumer_defensive: "Consumer staples",
+  basic_materials: "Materials",
+  communication_services: "Communications",
+  healthcare: "Healthcare",
+  industrials: "Industrials",
+  energy: "Energy",
+  utilities: "Utilities",
+  realestate: "Real Estate",
+};
+// Yahoo symbol exchange-suffix → country, for inferring a fund's dominant region
+// from its top holdings (fallback only — most funds resolve by mandate name in live.ts).
+const SUFFIX_COUNTRY = {
+  HE: "Finland", ST: "Sweden", OL: "Norway", CO: "Denmark", IC: "Iceland",
+  L: "United Kingdom", DE: "Germany", F: "Germany", PA: "France", AS: "Netherlands",
+  BR: "Belgium", MC: "Spain", MI: "Italy", SW: "Switzerland", VI: "Austria", LS: "Portugal", IR: "Ireland",
+  TW: "Taiwan", KS: "South Korea", KQ: "South Korea", T: "Japan", HK: "Hong Kong",
+  SS: "China", SZ: "China", SI: "Singapore", AX: "Australia", NZ: "New Zealand", BO: "India", NS: "India",
+};
+
 export async function fetchInstrument(isin, period1) {
   let sym = isin, type = null, sname = isin;
   if (ISIN_RE.test(isin)) {
@@ -80,6 +105,7 @@ export async function fetchInstrument(isin, period1) {
     : q.dividendYield != null ? +(+q.dividendYield).toFixed(2) : 0;
 
   let sector = null, country = null, assetClass = null;
+  let sectorWeights = null, regionHint = null;
   const MM_RE = /liquidity|money.?market|rahamarkkina|likvid|kassa|ultra.?short|overnight|euro short|short.?term (bond|fixed|money)|t-?bill|treasury bill/i;
   const moneyMarket = MM_RE.test(name);
 
@@ -90,7 +116,9 @@ export async function fetchInstrument(isin, period1) {
       country = p?.assetProfile?.country || null;
     } catch { /* optional */ }
   } else if (t === "ETF" || t === "MUTUALFUND") {
-    // asset class from holdings: bond-heavy → Fixed income, stock-heavy → Equity
+    // asset class from holdings: bond-heavy → Fixed income, stock-heavy → Equity.
+    // Also capture sector weightings (for equity-fund look-through) and a region
+    // hint (dominant country of the top holdings, by listing exchange).
     try {
       const p = await yf.quoteSummary(sym, { modules: ["topHoldings"] });
       const th = p?.topHoldings;
@@ -99,6 +127,27 @@ export async function fetchInstrument(isin, period1) {
       if (moneyMarket) assetClass = "Money Market";
       else if (bond > stock && bond > 0.5) assetClass = "Fixed Income";
       else if (stock > 0) assetClass = "Equity";
+
+      if (th?.sectorWeightings?.length) {
+        const sw = {};
+        for (const row of th.sectorWeightings) {
+          const key = Object.keys(row)[0];
+          const label = FUND_SECTOR[key];
+          const w = +row[key];
+          if (label && w > 0) sw[label] = (sw[label] || 0) + w;
+        }
+        if (Object.keys(sw).length) sectorWeights = sw;
+      }
+      if (th?.holdings?.length) {
+        const tally = {};
+        for (const h of th.holdings) {
+          const parts = (h.symbol || "").split(".");
+          const suf = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "US";
+          const c = SUFFIX_COUNTRY[suf] || (suf === "US" ? "USA" : null);
+          if (c) tally[c] = (tally[c] || 0) + (h.holdingPercent || 0.01);
+        }
+        regionHint = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || null;
+      }
     } catch { /* optional */ }
     if (!assetClass) {
       if (moneyMarket) assetClass = "Money Market";
@@ -120,6 +169,8 @@ export async function fetchInstrument(isin, period1) {
     sector,
     country,
     assetClass, // Equity | Fixed Income | Money Market (funds only)
+    sectorWeights, // { displaySector: weight 0..1 } for equity-fund sector look-through
+    regionHint, // dominant country of top holdings (fund region fallback)
     moneyMarket,
     divYield,
     history,

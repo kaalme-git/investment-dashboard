@@ -3,7 +3,7 @@ import type { AllocDim } from "../data/types";
 import type { TrendPeriod } from "../data/portfolio";
 import { parseCsv, type Txn } from "../data/transactions";
 import { REAL_TXNS_CSV } from "../data/realTxns";
-import { buildPortfolio, BENCH_SYMBOL, type Portfolio, type PriceMap } from "../data/live";
+import { buildPortfolio, BENCH_SYMBOL, type Portfolio, type PriceMap, type StyleOverrides } from "../data/live";
 import { supabase, supabaseEnabled } from "../lib/supabase";
 import { loadTxns as dbLoadTxns, saveTxns as dbSaveTxns, clearTxns as dbClearTxns } from "../data/txnsRepo";
 import { loadSettings as dbLoadSettings, saveSettings as dbSaveSettings } from "../data/settingsRepo";
@@ -89,7 +89,7 @@ async function commitTxns(
         dataLoading: false,
         pendingImport: null,
         txFile: name + " · " + (replace ? "replaced — " : "") + merged.length + " transactions in account",
-        portfolio: buildPortfolio(merged, get().prices),
+        portfolio: buildPortfolio(merged, get().prices, get().styleOverrides),
       });
       void get().fetchPrices(true);
     } catch (e) {
@@ -124,6 +124,7 @@ function scheduleSettingsSave(get: () => DashState) {
       watchlist: s.watchlist,
       notes: s.notes,
       bench: s.bench,
+      styleOverrides: s.styleOverrides,
       calc: {
         ret: s.calcRet,
         monthly: s.calcMonthly,
@@ -214,9 +215,11 @@ function loadNotes(): NotesMap {
 interface DashState {
   // dashboard controls
   bench: string;
+  styleOverrides: StyleOverrides; // per-instrument active/passive overrides (by ISIN)
   period: TrendPeriod;
   allocMode: AllocDim;
   hoverAlloc: number | null;
+  allocSelected: number | null; // bucket clicked open in the Allocation drill-down
   hoverPerf: number | null;
 
   // performance chart — which instrument groups to include in the return
@@ -278,9 +281,11 @@ interface DashState {
   calcAllocMode: "target" | "current"; // which allocation drives the projection
 
   setBench: (b: string) => void;
+  setStyleOverride: (isin: string, v: "active" | "passive" | null) => void;
   setPeriod: (p: TrendPeriod) => void;
   setAllocMode: (m: AllocDim) => void;
   setHoverAlloc: (i: number | null) => void;
+  setAllocSelected: (i: number | null) => void;
   setHoverPerf: (i: number | null) => void;
 
   setAiPrompt: (q: string) => void;
@@ -317,9 +322,11 @@ const INITIAL_PRICES = loadPrices();
 
 export const useStore = create<DashState>((set, get) => ({
   bench: "OMXH25",
+  styleOverrides: {},
   period: "1Y",
   allocMode: "asset",
   hoverAlloc: null,
+  allocSelected: null,
   hoverPerf: null,
 
   perfGroups: { stocks: true, funds: true, cash: true },
@@ -407,8 +414,9 @@ export const useStore = create<DashState>((set, get) => ({
         txns,
         dataLoading: false,
         txFile: txns.length ? txns.length + " transactions in your account" : "No transactions yet — upload your Nordnet CSV",
-        portfolio: buildPortfolio(txns, get().prices),
+        portfolio: buildPortfolio(txns, get().prices, settings?.styleOverrides ?? s.styleOverrides),
         // apply saved settings (fall back to existing defaults for any missing field)
+        styleOverrides: settings?.styleOverrides ?? s.styleOverrides,
         strategyText: settings?.strategy ?? s.strategyText,
         targets: settings?.targets ?? s.targets,
         watchlist: settings?.watchlist ?? s.watchlist,
@@ -416,7 +424,8 @@ export const useStore = create<DashState>((set, get) => ({
         bench: settings?.bench ?? s.bench,
         calcRet: settings?.calc?.ret ?? s.calcRet,
         calcMonthly: settings?.calc?.monthly ?? s.calcMonthly,
-        calcYears: settings?.calc?.years ?? s.calcYears,
+        // snap any previously-saved horizon that's no longer an option (was 5/20) to the 30y default
+        calcYears: [10, 30, 50].includes(settings?.calc?.years as number) ? (settings!.calc!.years as number) : 30,
         calcTarget: settings?.calc?.target ?? s.calcTarget,
         calcAllocMode: settings?.calc?.allocMode ?? s.calcAllocMode,
       }));
@@ -455,7 +464,7 @@ export const useStore = create<DashState>((set, get) => ({
       const prices = { ...get().prices, ...(j.data || {}) };
       const fetchedAt = Date.now();
       persistPrices(prices, fetchedAt);
-      set({ prices, pricesFetchedAt: fetchedAt, pricesLoading: false, portfolio: buildPortfolio(get().txns, prices) });
+      set({ prices, pricesFetchedAt: fetchedAt, pricesLoading: false, portfolio: buildPortfolio(get().txns, prices, get().styleOverrides) });
     } catch (e) {
       set({ pricesLoading: false, pricesError: String((e as Error)?.message || e) });
     }
@@ -473,15 +482,24 @@ export const useStore = create<DashState>((set, get) => ({
 
   calcRet: { Equities: 7, "Fixed income": 3, Alternatives: 5, "Cash & equivalent": 2 },
   calcMonthly: 500,
-  calcYears: 10,
+  calcYears: 30,
   calcTarget: 1000000,
   calcHover: null,
   calcAllocMode: "target",
 
   setBench: (b) => { set({ bench: b }); scheduleSettingsSave(get); },
+  setStyleOverride: (isin, v) => {
+    if (!isin) return;
+    const next = { ...get().styleOverrides };
+    if (v === null) delete next[isin];
+    else next[isin] = v;
+    set({ styleOverrides: next, portfolio: buildPortfolio(get().txns, get().prices, next) });
+    scheduleSettingsSave(get);
+  },
   setPeriod: (p) => set({ period: p }),
-  setAllocMode: (m) => set({ allocMode: m }),
+  setAllocMode: (m) => set({ allocMode: m, allocSelected: null }), // bucket indices differ per view
   setHoverAlloc: (i) => set({ hoverAlloc: i }),
+  setAllocSelected: (i) => set((s) => ({ allocSelected: s.allocSelected === i ? null : i })), // toggle
   setHoverPerf: (i) => set({ hoverPerf: i }),
 
   setAiPrompt: (q) => set((s) => ({ ai: { ...s.ai, prompt: q } })),

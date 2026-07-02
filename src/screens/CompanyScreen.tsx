@@ -18,6 +18,7 @@ export default function CompanyScreen() {
   const addWatchTicker = useStore((s) => s.addWatchTicker);
   const companyMetrics = useStore((s) => s.portfolio.companyMetrics);
   const isHeld = useStore((s) => s.portfolio.isHeld);
+  const setStyleOverride = useStore((s) => s.setStyleOverride);
   const [draft, setDraft] = useState("");
 
   const metrics = companyMetrics(ticker);
@@ -71,6 +72,69 @@ export default function CompanyScreen() {
               <div className="cmv">
                 <span className={"rec " + metrics.recCls}>{metrics.recShort}</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {metrics && (
+          <div className="card clscard">
+            <div className="cardttl">Classification</div>
+            <div className="clsbuckets">
+              <ClsBucket k="Sector" v={metrics.bucketSector} />
+              <ClsBucket k="Region" v={metrics.bucketRegion} />
+              <ClsBucket k="Asset" v={metrics.bucketAsset} />
+              <ClsBucket k="Style" v={metrics.bucketStyle} />
+            </div>
+
+            {metrics.bucketStyle !== "Cash & equivalents" && metrics.isin && (
+              <div className="clsovr">
+                <span className="clssub" style={{ margin: 0 }}>Classify as</span>
+                <div className="periodrow">
+                  <button
+                    className={"pbtn" + (metrics.bucketStyle === "Active" ? " on" : "")}
+                    onClick={() => setStyleOverride(metrics.isin, "active")}
+                  >
+                    Active
+                  </button>
+                  <button
+                    className={"pbtn" + (metrics.bucketStyle === "Passive" ? " on" : "")}
+                    onClick={() => setStyleOverride(metrics.isin, "passive")}
+                  >
+                    Passive
+                  </button>
+                </div>
+                {metrics.styleOverridden && (
+                  <span className="clsovrnote">
+                    Overridden · auto is {metrics.styleAuto}
+                    <button className="clsreset" onClick={() => setStyleOverride(metrics.isin, null)}>reset</button>
+                  </span>
+                )}
+              </div>
+            )}
+            {metrics.fundSectors && (
+              <div className="clssectors">
+                <div className="clssub">Sector look-through (fund holdings)</div>
+                <div className="clssrows">
+                  {metrics.fundSectors.map((s) => (
+                    <div className="clssrow" key={s.label}>
+                      <span className="clsslbl">{s.label}</span>
+                      <div className="clsstrack">
+                        <div className="clssfill" style={{ width: s.pctStr }} />
+                      </div>
+                      <span className="num clsspct">{s.pctStr}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="clssub">How it's derived</div>
+            <div className="clsvars">
+              {metrics.clsVars.map((r) => (
+                <div className="clsvar" key={r.k}>
+                  <span className="clsvk">{r.k}</span>
+                  <span className="clsvv">{r.v}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -145,6 +209,15 @@ function Metric({ k, v, cls = "" }: { k: string; v: string; cls?: string }) {
     <div className="cm">
       <div className="cmk">{k}</div>
       <div className={"cmv num " + cls}>{v}</div>
+    </div>
+  );
+}
+
+function ClsBucket({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="clsb">
+      <div className="clsbk">{k}</div>
+      <div className="clsbv">{v}</div>
     </div>
   );
 }

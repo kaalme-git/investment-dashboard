@@ -19,13 +19,28 @@ import type {
   TableGroup,
   TableRow,
 } from "./types";
-import type { Kpi, HoldRow, HoldGroup, CompanyMetrics, Performance, PerfGroups, TrendPeriod } from "./portfolio";
+import type { Kpi, HoldRow, HoldGroup, CompanyMetrics, Performance, PerfGroups, TrendPeriod, AllocContribution } from "./portfolio";
 
 export const ACCENT = "#0000e6";
 const GREY = "#d9d9d9";
 // blue-family palette; slices are coloured by descending weight so the model
 // stays generic for any set of sector / region / asset labels.
-const PALETTE = [ACCENT, "#2e2eff", "#5a5aff", "#6b6bff", "#8585ff", "#a8a8ff", "#c49cff", "#91a77f", "#b6c9a3", "#8fae86", "#9aa7c2"];
+// allocation band colours — DESIGN-SYSTEM tokens ONLY (design_handoff colors_and_type.css).
+// Priority: brand blue → brand support colours → the house grey → other tokens only if needed.
+const PALETTE = [
+  ACCENT, // brand blue          #0000e6
+  "#c49cff", // support purple
+  "#91a77f", // support green
+  "#d4fcb3", // support lime
+  "#fccebe", // support light red
+  GREY, // house grey          #d9d9d9
+  // beyond the brand set — other design-system tokens:
+  "#ad0101", // error red
+  "#256100", // success green
+  "#7a3e00", // warning brown
+  "#d0553a", // rec reduce
+  "#2e2eff", // brand blue ink
+];
 
 // ---- price feed shape (mirrors api/_lib/prices.mjs) ----
 export interface PriceInfo {
@@ -37,6 +52,8 @@ export interface PriceInfo {
   sector?: string | null;
   country?: string | null;
   assetClass?: string | null; // Equity | Fixed Income | Money Market (funds)
+  sectorWeights?: Record<string, number> | null; // equity-fund sector look-through { sector: weight 0..1 }
+  regionHint?: string | null; // dominant country of a fund's top holdings (region fallback)
   moneyMarket?: boolean;
   divYield?: number;
   price?: number;
@@ -55,6 +72,9 @@ export interface DividendBar {
   estimated: number; // current year only: analyst-estimated annual dividend from CURRENT holdings
 }
 export type PriceMap = Record<string, PriceInfo>;
+
+// per-instrument manual active/passive override, keyed by ISIN (user Settings)
+export type StyleOverrides = Record<string, "active" | "passive">;
 
 // Inderes recommendation enum → UI label + CSS class (matches .rec.buy/.accu/…)
 const REC_DISPLAY: Record<string, [string, string]> = {
@@ -139,24 +159,39 @@ interface Cls {
   sectorLabel: string; // for allocation (funds → asset-class label)
   assetLabel: "Equities" | "Fixed income" | "Alternatives" | "Cash & equivalent";
 }
+// a non-ETF fund whose name references an index → passive index fund; else active
+const INDEX_NAME_RE = /index|indeksi|\bomx|\bmsci\b|s&p|stoxx|ftse|\bdax\b|mdax|russell|nasdaq|nikkei|\bcac\b|\bdow\b|tracker/i;
+
 function classify(name: string, info?: PriceInfo): Cls {
   const t = info?.type;
   const mm = info?.moneyMarket || MM_NAME_RE.test(name);
   const looksFund = isFund(t) || (!t && FUND_NAME_RE.test(name));
 
+  // individual stocks are always active
   if (t === "EQUITY" || (!t && !looksFund && !mm)) {
     return { sleeve: "stocks", group: "Stocks", kind: "Stock", typeAP: "active", sectorLabel: normSector(info?.sector), assetLabel: "Equities" };
   }
+  // cash & equivalents are their own style bucket (neither active nor passive);
+  // typeAP is unused for cash since it's excluded from the active/passive split.
   if (mm) {
     return { sleeve: "cash", group: "Cash", kind: "Cash eq.", typeAP: "passive", sectorLabel: "Cash equivalent", assetLabel: "Cash & equivalent" };
   }
-  // fund / etf
+  // fixed-income funds (that aren't cash equivalents) are treated as active
   const ac = info?.assetClass || (FI_NAME_RE.test(name) ? "Fixed Income" : "Equity");
   if (ac === "Fixed Income") {
-    return { sleeve: "funds", group: "FixedIncomeFunds", kind: "Bond fund", typeAP: "passive", sectorLabel: "Fixed income fund", assetLabel: "Fixed income" };
+    return { sleeve: "funds", group: "FixedIncomeFunds", kind: "Bond fund", typeAP: "active", sectorLabel: "Fixed income fund", assetLabel: "Fixed income" };
   }
-  const kind = t === "MUTUALFUND" ? "Index fund" : "ETF";
-  return { sleeve: "funds", group: "EquityFunds", kind, typeAP: "passive", sectorLabel: "Equity fund", assetLabel: "Equities" };
+  // equity fund → ETF / Index (passive) or actively-managed (active)
+  if (t === "ETF") {
+    return { sleeve: "funds", group: "EquityFunds", kind: "ETF", typeAP: "passive", sectorLabel: "Equity fund", assetLabel: "Equities" };
+  }
+  const isIndex = INDEX_NAME_RE.test(name);
+  return {
+    sleeve: "funds", group: "EquityFunds",
+    kind: isIndex ? "Index fund" : "Active fund",
+    typeAP: isIndex ? "passive" : "active",
+    sectorLabel: "Equity fund", assetLabel: "Equities",
+  };
 }
 
 const SECTOR_MAP: Record<string, string> = {
@@ -170,11 +205,36 @@ function normSector(s?: string | null): string {
   if (!s) return "Other";
   return SECTOR_MAP[s] || s;
 }
-function normRegion(country?: string | null, fund?: boolean): string {
-  if (fund) return "Global";
+function normRegion(country?: string | null): string {
   if (!country) return "Other";
   if (/united states|usa/i.test(country)) return "USA";
   return country;
+}
+
+// Fund region by MANDATE (name) — stable across price refreshes; falls back to
+// the dominant-holdings country hint, then "Global". Order matters: specific → general
+// (e.g. "Far East" must beat "Japan" for an ex-Japan fund; index countries beat "Europe").
+const REGION_PATTERNS: [RegExp, string][] = [
+  [/nordic|norden|pohjois/i, "Nordics"],
+  [/helsink|omxh|\bomx\b|finland|suomi/i, "Finland"],
+  [/sweden|sverige|omxs/i, "Sweden"],
+  [/norway|norge/i, "Norway"],
+  [/denmark|danmark/i, "Denmark"],
+  [/emerging|kehittyv|\bem\b/i, "Emerging markets"],
+  [/mdax|\bdax\b|german|deutsch/i, "Germany"],
+  [/far east|asia|pacific|apac/i, "Asia"],
+  [/japan|nikkei|topix/i, "Japan"],
+  [/taiwan/i, "Taiwan"],
+  [/china|hong ?kong|\bhk\b/i, "China"],
+  [/\bindia\b/i, "India"],
+  [/ftse|united kingdom|britain|\buk\b/i, "United Kingdom"],
+  [/russell|s&p|sp ?500|\bus\b|u\.s\.|america|nasdaq|\bdow\b/i, "USA"],
+  [/europe|euroopp|stoxx|euro ?zone|\bemu\b/i, "Europe"],
+  [/world|global|acwi|all.?countr/i, "Global"],
+];
+function fundRegion(name: string, hint?: string | null): string {
+  for (const [re, label] of REGION_PATTERNS) if (re.test(name)) return label;
+  return hint || "Global";
 }
 
 // ---- reconstructed position (current) ----
@@ -193,6 +253,7 @@ interface Sec {
   seed: number;
   cls: Cls;
   region: string;
+  sectorWeights: Record<string, number> | null; // equity-fund sector look-through (else null)
   recShort: string;
   recCls: string;
   targetPrice: number | null;
@@ -222,11 +283,15 @@ export interface Portfolio {
   kpis: Kpi[];
   allocMap: Record<AllocDim, AllocSeg[]>;
   allocModeLbl: Record<AllocDim, string>;
+  allocDetail: Record<AllocDim, Record<string, AllocContribution[]>>; // instruments behind each bucket
+  allocSeries: Record<AllocDim, Record<string, number[]>>; // real per-label weight-% history
+  allocDates: string[]; // time axis for allocSeries (ISO dates, oldest → today)
   tableGroups: TableGroup[];
   holdingsGroups: HoldGroup[];
   assetCurrent: Record<string, number>;
   activePctNum: number;
   passivePctNum: number;
+  cashPctNum: number;
   totalValue: number;
   benchDefs: Record<string, BenchDef>;
   isHeld: (ticker: string) => boolean;
@@ -238,7 +303,7 @@ export interface Portfolio {
 
 const recStub = { recShort: "—", recCls: "na" };
 
-export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
+export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: StyleOverrides = {}): Portfolio {
   const keyOf = (t: Txn) => t.isin || t.ticker || t.name;
   const fallbackPx = lastTxnPrice(txns);
 
@@ -279,6 +344,26 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
     if (k) divByIsin[k] = (divByIsin[k] || 0) + (t.amount || 0);
   }
 
+  // trailing 12-month dividend-per-share (EUR) from the user's OWN dividend
+  // transactions — a last-resort yield source for holdings that neither Inderes
+  // nor Yahoo cover (e.g. some First North names). amount ÷ qty = per-share EUR.
+  // A single payout can span several lot-rows on the same date with identical
+  // DPS, so key by (instrument, date) to record each event's DPS once, then sum
+  // distinct events across the trailing year.
+  const trailCutoff = Date.now() - 365 * 864e5;
+  const dpsByEvent: Record<string, number> = {};
+  for (const t of txns) {
+    if (t.category !== "dividend" || !t.date || +new Date(t.date) < trailCutoff) continue;
+    const k = t.isin || t.ticker || t.name;
+    const dps = t.qty > 0 ? (t.amount || 0) / t.qty : 0;
+    if (k && dps > 0) dpsByEvent[k + "|" + t.date] = dps;
+  }
+  const trailingDpsByIsin: Record<string, number> = {};
+  for (const key in dpsByEvent) {
+    const k = key.slice(0, key.indexOf("|"));
+    trailingDpsByIsin[k] = (trailingDpsByIsin[k] || 0) + dpsByEvent[key];
+  }
+
   // ---- current securities ----
   const NEXT_YEAR = new Date().getFullYear() + 1; // forward-yield reference year
   const secs: Sec[] = Object.values(pos)
@@ -286,16 +371,21 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
     .map((p) => {
       const info = priceOf(p.isin);
       const cls = classify(p.name, info);
+      // manual active/passive override (stocks & funds only; cash isn't active/passive)
+      const ov = styleOverrides[p.isin];
+      if (ov && cls.sleeve !== "cash") cls.typeAP = ov;
       const last = info?.found && info.price ? info.price : fallbackPx[p.isin] || (p.qty ? p.cost / p.qty : 0);
       const prev = info?.found && info.prevClose ? info.prevClose : last;
       const value = p.qty * last;
       const cost = p.cost;
       const divRecv = divByIsin[p.isin] || 0; // dividends received while holding
       const rd = recOf(info?.rec);
-      // forward dividend yield: next-year Inderes DPS estimate ÷ current price;
-      // fall back to the trailing Yahoo yield when there's no analyst estimate.
+      // forward dividend yield, best source first: (1) next-year Inderes DPS
+      // estimate ÷ price, (2) Yahoo trailing 12-month yield, (3) trailing yield
+      // derived from the user's own dividend transactions.
       const nextDps = info?.divEstimates?.[NEXT_YEAR];
-      const fwdYield = nextDps != null && last > 0 ? (nextDps / last) * 100 : info?.divYield || 0;
+      const ownTrailYield = last > 0 && trailingDpsByIsin[p.isin] ? (trailingDpsByIsin[p.isin] / last) * 100 : 0;
+      const fwdYield = nextDps != null && last > 0 ? (nextDps / last) * 100 : info?.divYield || ownTrailYield;
       return {
         isin: p.isin,
         name: p.name,
@@ -310,7 +400,9 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
         fwdYield,
         seed: hashInt(p.isin),
         cls,
-        region: normRegion(info?.country, cls.sleeve !== "stocks"),
+        // stocks → company country; funds → mandate region (name) / holdings hint; cash → own bucket
+        region: cls.sleeve === "stocks" ? normRegion(info?.country) : cls.sleeve === "funds" ? fundRegion(p.name, info?.regionHint) : "Cash",
+        sectorWeights: cls.group === "EquityFunds" ? info?.sectorWeights ?? null : null,
         recShort: rd.recShort,
         recCls: rd.recCls,
         targetPrice: info?.targetPrice ?? null,
@@ -342,9 +434,14 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   const dayPct = TOTAL - dayAbs !== 0 ? (dayAbs / (TOTAL - dayAbs)) * 100 : 0;
   const divIncome = investable.reduce((s, h) => s + (h.value * h.fwdYield) / 100, 0); // forward (est.) income
   const divYield = (divIncome / safeTotal) * 100;
-  const passiveValue = secs.filter((h) => h.cls.typeAP === "passive").reduce((s, h) => s + h.value, 0);
+  // three-way style split of the whole portfolio: invested holdings by their
+  // typeAP, and cash & equivalents (raw cash + money-market funds) as their own
+  // bucket — these three sum to 100%.
+  const activeValue = investable.filter((h) => h.cls.typeAP === "active").reduce((s, h) => s + h.value, 0);
+  const passiveValue = investable.filter((h) => h.cls.typeAP === "passive").reduce((s, h) => s + h.value, 0);
+  const activePct = (activeValue / safeTotal) * 100;
   const passivePct = (passiveValue / safeTotal) * 100;
-  const activePct = ((TOTAL - passiveValue) / safeTotal) * 100;
+  const cashPct = (cashTotal / safeTotal) * 100;
 
   const kpis: Kpi[] = [
     { label: "Total value", value: eur(TOTAL), cls: "" },
@@ -371,28 +468,77 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   }
   const isCashLabel = (l: string) => /^cash/i.test(l);
 
-  function aggBy(fn: (h: Sec) => string): { label: string; pct: number }[] {
+  // Weighted aggregation: a holding may feed MULTIPLE buckets (equity funds spread
+  // across sectors via look-through). Returns bucket totals AND the per-instrument
+  // contributions behind each bucket (for the drill-down panel). Cash (real +
+  // money-market) is a single bucket, labelled per view.
+  const contribRow = (h: Sec, value: number, note?: string): AllocContribution => ({
+    ticker: h.ticker, name: h.name, value, valueStr: eur(value), pctStr: ((value / safeTotal) * 100).toFixed(1) + "%", note,
+  });
+  function aggregate(contribs: (h: Sec) => { label: string; value: number; note?: string }[], cashLabel = "Cash") {
     const m: Record<string, number> = {};
-    investable.forEach((h) => (m[fn(h)] = (m[fn(h)] || 0) + h.value));
-    m.Cash = (m.Cash || 0) + cashTotal;
-    return Object.keys(m).map((label) => ({ label, pct: (m[label] / safeTotal) * 100 }));
+    const detail: Record<string, AllocContribution[]> = {};
+    investable.forEach((h) => {
+      for (const c of contribs(h)) if (c.value > 0) {
+        m[c.label] = (m[c.label] || 0) + c.value;
+        (detail[c.label] ||= []).push(contribRow(h, c.value, c.note));
+      }
+    });
+    if (cashTotal > 0) {
+      m[cashLabel] = (m[cashLabel] || 0) + cashTotal;
+      const cd = (detail[cashLabel] ||= []);
+      if (CASH_V > 0) cd.push({ ticker: "CASH", name: "Cash balance (EUR)", value: CASH_V, valueStr: eur(CASH_V), pctStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%" });
+      secs.filter((s) => s.cls.group === "Cash").forEach((h) => cd.push(contribRow(h, h.value)));
+    }
+    for (const k in detail) detail[k].sort((a, b) => b.value - a.value);
+    return { segs: Object.keys(m).map((label) => ({ label, pct: (m[label] / safeTotal) * 100 })), detail };
   }
 
-  const sectorSeg = buildSeg(aggBy((h) => h.cls.sectorLabel));
-  const regionSeg = buildSeg(aggBy((h) => h.region));
-  const assetSeg = buildSeg(aggBy((h) => h.cls.assetLabel));
+  // SECTOR — stocks by sector; equity funds looked-through via sector weightings;
+  // fixed-income funds and cash form their own buckets.
+  const sectorAgg = aggregate((h) => {
+    if (h.cls.group === "FixedIncomeFunds") return [{ label: "Fixed income", value: h.value }];
+    if (h.cls.group === "EquityFunds") {
+      const sw = h.sectorWeights;
+      const tot = sw ? Object.values(sw).reduce((s, w) => s + w, 0) : 0;
+      if (sw && tot > 0) return Object.entries(sw).map(([label, w]) => ({ label, value: h.value * (w / tot), note: (w / tot * 100).toFixed(0) + "% of fund" }));
+      return [{ label: "Equity fund (unclassified)", value: h.value }];
+    }
+    return [{ label: h.cls.sectorLabel, value: h.value }]; // stocks
+  });
+  // REGION — stocks by company country; funds by mandate region; cash its own bucket.
+  const regionAgg = aggregate((h) => [{ label: h.region, value: h.value }]);
+  // ASSET — Stocks / Equity funds / Fixed income / Cash & equivalents.
+  const assetViewLabel = (h: Sec): string =>
+    h.cls.group === "Stocks" ? "Stocks"
+      : h.cls.group === "EquityFunds" ? "Equity funds"
+        : h.cls.group === "FixedIncomeFunds" ? "Fixed income"
+          : h.cls.group === "AltFunds" ? "Alternatives"
+            : "Cash & equivalents";
+  const assetAgg = aggregate((h) => [{ label: assetViewLabel(h), value: h.value }], "Cash & equivalents");
+  // STYLE — active / passive / cash & equivalents (cash is its own bucket).
+  const styleAgg = aggregate((h) => [{ label: h.cls.typeAP === "active" ? "Active" : "Passive", value: h.value }], "Cash & equivalents");
+
+  const sectorSeg = buildSeg(sectorAgg.segs);
+  const regionSeg = buildSeg(regionAgg.segs);
+  const assetSeg = buildSeg(assetAgg.segs);
   const styleSeg = buildSeg([
     { label: "Active", pct: activePct },
     { label: "Passive", pct: passivePct },
+    { label: "Cash & equivalents", pct: cashPct },
   ]);
-  // style colours: active accent, passive violet (keep legacy look)
-  styleSeg.forEach((s) => (s.color = s.label === "Active" ? ACCENT : "#c49cff"));
+  styleSeg.forEach((s) => (s.color = s.label === "Active" ? ACCENT : s.label === "Passive" ? "#c49cff" : GREY));
 
   const allocMap: Record<AllocDim, AllocSeg[]> = { sector: sectorSeg, region: regionSeg, asset: assetSeg, style: styleSeg };
-  const allocModeLbl: Record<AllocDim, string> = { sector: "sector", region: "region", asset: "asset-class", style: "active vs passive" };
+  const allocModeLbl: Record<AllocDim, string> = { sector: "sector", region: "region", asset: "asset-class", style: "style" };
+  const allocDetail: Record<AllocDim, Record<string, AllocContribution[]>> = {
+    sector: sectorAgg.detail, region: regionAgg.detail, asset: assetAgg.detail, style: styleAgg.detail,
+  };
 
+  // assetCurrent stays on the BROAD classes (Equities / Fixed income / Alternatives /
+  // Cash & equivalent) the Calculations projection + Strategy targets rely on.
   const assetCurrent: Record<string, number> = {};
-  assetSeg.forEach((s) => (assetCurrent[s.label] = s.pctNum));
+  aggregate((h) => [{ label: h.cls.assetLabel, value: h.value }], "Cash & equivalent").segs.forEach((e) => (assetCurrent[e.label] = e.pct));
 
   // ---- grouped tables ----
   const grpMeta: { key: HoldingGroup; label: string }[] = [
@@ -406,7 +552,8 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
     Stock: ["Stock", "act"],
     ETF: ["ETF", "pas"],
     "Index fund": ["Index", "pas"],
-    "Bond fund": ["Bond", "pas"],
+    "Active fund": ["Active", "act"],
+    "Bond fund": ["Bond", "act"],
     "Cash eq.": ["Cash eq", "csh"],
   };
 
@@ -460,7 +607,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       dayCls: h.dayPct >= 0 ? "up" : "down",
       totalStr: sgn(h.totalPct),
       totCls: h.totalPct >= 0 ? "up" : "down",
-      yieldStr: h.fwdYield ? h.fwdYield.toFixed(1) + "%" : "—",
+      yieldStr: h.fwdYield.toFixed(1) + "%",
       weightStr: ((h.value / safeTotal) * 100).toFixed(1) + "%",
       recShort: h.recShort,
       recCls: h.recCls,
@@ -487,6 +634,30 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   const companyMetrics = (ticker: string): CompanyMetrics | null => {
     const h = byTicker[ticker];
     if (!h) return null;
+    // which allocation buckets it lands in, + the raw variables behind them
+    const info = priceOf(h.isin);
+    const g = h.cls.group;
+    const bucketAsset = g === "Stocks" ? "Stocks" : g === "EquityFunds" ? "Equity funds" : g === "FixedIncomeFunds" ? "Fixed income" : g === "AltFunds" ? "Alternatives" : "Cash & equivalents";
+    const bucketStyle = g === "Cash" ? "Cash & equivalents" : h.cls.typeAP === "active" ? "Active" : "Passive";
+    const bucketSector = g === "Stocks" ? h.cls.sectorLabel : g === "EquityFunds" ? (h.sectorWeights ? "Look-through" : "Equity fund") : g === "FixedIncomeFunds" ? "Fixed income" : "Cash";
+    const swTot = h.sectorWeights ? Object.values(h.sectorWeights).reduce((s, w) => s + w, 0) : 0;
+    const fundSectors = g === "EquityFunds" && h.sectorWeights && swTot > 0
+      ? Object.entries(h.sectorWeights).map(([label, w]) => ({ label, pctStr: ((w / swTot) * 100).toFixed(0) + "%", n: w })).sort((a, b) => b.n - a.n).map(({ label, pctStr }) => ({ label, pctStr }))
+      : null;
+    const regionBasis = h.cls.sleeve === "stocks" ? "Company country (Yahoo)"
+      : h.cls.sleeve === "funds" ? (REGION_PATTERNS.some(([re]) => re.test(h.name)) ? "Fund mandate (name)" : info?.regionHint ? "Top holdings" : "Default (Global)")
+        : "—";
+    const clsVars = [
+      { k: "Yahoo type", v: info?.type || "—" },
+      { k: "Kind", v: h.cls.kind },
+      { k: "Asset class", v: info?.assetClass || (h.cls.sleeve === "stocks" ? "Equity (stock)" : "—") },
+      { k: "Money-market", v: h.cls.sleeve === "cash" ? "yes" : "no" },
+      ...(h.cls.sleeve === "stocks" ? [{ k: "Sector (Yahoo)", v: info?.sector || "—" }, { k: "Country (Yahoo)", v: info?.country || "—" }] : []),
+      { k: "Region basis", v: regionBasis },
+    ];
+    // effective style is h.cls.typeAP (post-override); auto = classification without override
+    const autoCls = classify(h.name, info);
+    const styleAuto = h.cls.sleeve === "cash" ? "Cash & equivalents" : autoCls.typeAP === "active" ? "Active" : "Passive";
     return {
       name: h.name,
       sector: h.cls.sectorLabel,
@@ -500,10 +671,12 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
       weightStr: ((h.value / safeTotal) * 100).toFixed(1) + "%",
       sharesStr: h.qty.toLocaleString("en-US", { maximumFractionDigits: 2 }),
       avgStr: "€" + (h.qty ? h.cost / h.qty : 0).toFixed(2),
-      yieldStr: h.fwdYield ? h.fwdYield.toFixed(1) + "%" : "—",
+      yieldStr: h.fwdYield.toFixed(1) + "%",
       recShort: h.recShort,
       recCls: h.recCls,
       targetStr: h.targetPrice ? "€" + h.targetPrice.toFixed(2) : "—",
+      bucketSector, bucketRegion: h.region, bucketAsset, bucketStyle, fundSectors, clsVars,
+      isin: h.isin, styleAuto, styleOverridden: !!styleOverrides[h.isin],
     };
   };
 
@@ -511,6 +684,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   // TWR reconstruction over a weekly grid (true historical account incl. sold)
   // ==========================================================================
   const perf = buildTWR(asc, prices, fallbackPx, keyOf);
+  const { dates: allocDates, series: allocSeries } = buildAllocSeries(asc, prices, fallbackPx, keyOf, styleOverrides);
 
   function getPerformance(benchKey: string, period: TrendPeriod, groups: PerfGroups): Performance {
     return computePerformance(perf, benchKey, period, groups);
@@ -527,12 +701,14 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   // estimated dividend income per year from CURRENT holdings, for the current year
   // and the next two. Prefer the Inderes analyst DPS estimate (DPS × shares); when a
   // holding has no estimate for a given year, fall back to its trailing dividend rate
-  // (current value × trailing yield) — the same fallback the Holdings "Yield" uses.
+  // — Yahoo's, else one derived from the user's own dividend transactions — the same
+  // source chain the Holdings "Yield" column uses.
   const futureYears = [curYear, curYear + 1, curYear + 2];
   const estByYear: Record<number, number> = {};
   for (const h of secs) {
     const de = priceOf(h.isin)?.divEstimates;
-    const trailing = h.divYield > 0 ? (h.value * h.divYield) / 100 : 0;
+    const trailYield = h.divYield > 0 ? h.divYield : h.last > 0 && trailingDpsByIsin[h.isin] ? (trailingDpsByIsin[h.isin] / h.last) * 100 : 0;
+    const trailing = (h.value * trailYield) / 100;
     for (const y of futureYears) {
       const est = de && de[y] != null ? h.qty * de[y] : trailing;
       if (est) estByYear[y] = (estByYear[y] || 0) + est;
@@ -551,10 +727,100 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
     });
 
   return {
-    kpis, allocMap, allocModeLbl, tableGroups, holdingsGroups, assetCurrent,
-    activePctNum: activePct, passivePctNum: passivePct, totalValue: TOTAL,
+    kpis, allocMap, allocModeLbl, allocDetail, tableGroups, holdingsGroups, assetCurrent,
+    activePctNum: activePct, passivePctNum: passivePct, cashPctNum: cashPct, totalValue: TOTAL,
     benchDefs, isHeld, companyMetrics, getPerformance, dividends, hasPrices,
+    allocSeries, allocDates,
   };
+}
+
+// ---- allocation over time (REAL reconstruction, same conventions as today) ----
+// Rebuilds holdings at monthly points over the last ~3 years (or since inception)
+// and aggregates each allocation dimension exactly like the current donut: stocks
+// by sector/country, equity funds looked-through by sector + assigned a mandate
+// region, fixed income + cash as their own buckets, style = active / passive / cash.
+// NOTE: fund sector weightings are Yahoo's CURRENT snapshot applied to past values
+// (Yahoo exposes no historical composition), so the sector split drifts from exact
+// further back; region / asset / style are exact (name- and type-derived).
+const ALLOC_POINTS = 24;
+function buildAllocSeries(
+  asc: Txn[], prices: PriceMap, fallbackPx: Record<string, number>, keyOf: (t: Txn) => string, styleOverrides: StyleOverrides = {},
+): { dates: string[]; series: Record<AllocDim, Record<string, number[]>> } {
+  const series: Record<AllocDim, Record<string, number[]>> = { sector: {}, region: {}, asset: {}, style: {} };
+  const dated = asc.filter((t) => t.date);
+  if (!dated.length) return { dates: [], series };
+
+  // static classification for every traded instrument
+  const nameOf: Record<string, string> = {};
+  dated.forEach((t) => { const k = keyOf(t); if (k && t.name && !nameOf[k]) nameOf[k] = t.name; });
+  const uni = new Map<string, { cls: Cls; region: string; sw: Record<string, number> | null; hist: { d: number; v: number }[]; fb: number }>();
+  dated.forEach((t) => {
+    const k = keyOf(t);
+    if (!k || shareSign(t.category) === 0 || uni.has(k)) return;
+    const info = prices[t.isin] || prices[k];
+    const cls = classify(nameOf[k] || k, info);
+    const ov = styleOverrides[t.isin];
+    if (ov && cls.sleeve !== "cash") cls.typeAP = ov;
+    const region = cls.sleeve === "stocks" ? normRegion(info?.country) : cls.sleeve === "funds" ? fundRegion(nameOf[k] || k, info?.regionHint) : "Cash";
+    uni.set(k, { cls, region, sw: cls.group === "EquityFunds" ? info?.sectorWeights ?? null : null, hist: sortedHist(info), fb: fallbackPx[t.isin || k] || t.price || 0 });
+  });
+
+  const N = ALLOC_POINTS;
+  const startMs = Math.max(+new Date(dated[0].date), Date.now() - 3 * 365 * 864e5);
+  const endMs = Date.now();
+  const grid: number[] = [];
+  for (let i = 0; i < N; i++) grid.push(Math.round(startMs + ((endMs - startMs) * i) / (N - 1)));
+
+  const add = (dim: AllocDim, label: string, ti: number, v: number) => {
+    (series[dim][label] ||= new Array(N).fill(0))[ti] += v;
+  };
+
+  const held: Record<string, number> = {};
+  let cashBal = 0, ci = 0;
+  for (let gi = 0; gi < N; gi++) {
+    const gd = grid[gi];
+    while (ci < dated.length && +new Date(dated[ci].date) <= gd) {
+      const t = dated[ci];
+      cashBal += t.amount || 0;
+      const sign = shareSign(t.category), k = keyOf(t);
+      if (sign !== 0 && k) held[k] = (held[k] || 0) + sign * t.qty;
+      ci++;
+    }
+    let cashVal = Math.max(0, cashBal); // real cash + money-market funds accumulate here
+    for (const [k, u] of uni) {
+      const q = held[k];
+      if (!q) continue;
+      const v = q * asOf(u.hist, gd, u.fb);
+      if (v <= 0) continue;
+      if (u.cls.group === "Cash") { cashVal += v; continue; }
+      // sector (equity funds looked-through)
+      if (u.cls.group === "FixedIncomeFunds") add("sector", "Fixed income", gi, v);
+      else if (u.cls.group === "EquityFunds") {
+        const sw = u.sw, tot = sw ? Object.values(sw).reduce((s, w) => s + w, 0) : 0;
+        if (sw && tot > 0) for (const [lab, w] of Object.entries(sw)) add("sector", lab, gi, v * (w / tot));
+        else add("sector", "Equity fund (unclassified)", gi, v);
+      } else add("sector", u.cls.sectorLabel, gi, v); // stocks
+      add("region", u.region, gi, v);
+      add("asset", u.cls.group === "Stocks" ? "Stocks" : u.cls.group === "EquityFunds" ? "Equity funds" : u.cls.group === "FixedIncomeFunds" ? "Fixed income" : "Cash & equivalents", gi, v);
+      add("style", u.cls.typeAP === "passive" ? "Passive" : "Active", gi, v);
+    }
+    if (cashVal > 0) {
+      add("sector", "Cash", gi, cashVal);
+      add("region", "Cash", gi, cashVal);
+      add("asset", "Cash & equivalents", gi, cashVal);
+      add("style", "Cash & equivalents", gi, cashVal);
+    }
+  }
+
+  // normalise each dimension to 100% at every time-step
+  for (const dim of ["sector", "region", "asset", "style"] as AllocDim[]) {
+    for (let ti = 0; ti < N; ti++) {
+      let sum = 0;
+      for (const lab in series[dim]) sum += series[dim][lab][ti];
+      if (sum > 0) for (const lab in series[dim]) series[dim][lab][ti] = (series[dim][lab][ti] / sum) * 100;
+    }
+  }
+  return { dates: grid.map((ms) => new Date(ms).toISOString().slice(0, 10)), series };
 }
 
 // ---- TWR engine (Own Capital methodology) ----

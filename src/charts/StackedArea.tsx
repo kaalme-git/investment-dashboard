@@ -1,40 +1,28 @@
-import { lcg } from "../lib/rng";
 import type { AllocSeg } from "../data/types";
 
 interface Props {
   segs: AllocSeg[];
-  n?: number;
+  series: number[][]; // real per-band weight (%) history, aligned to `segs`
   hoverIdx?: number | null;
   onEnter?: (i: number) => void;
   onLeave?: () => void;
 }
 
-/** 100% stacked-area chart — ported from the prototype's stackedArea().
- *  Each band ends at its current weight and drifts back deterministically over
- *  `n` time-steps. Shares hoverIdx with the donut + legend. */
-export default function StackedArea({ segs, n = 13, hoverIdx = null, onEnter, onLeave }: Props) {
+/** 100% stacked-area chart of the REAL allocation history. `series[i]` is band
+ *  `i`'s weight over time (reconstructed from transactions + prices in live.ts).
+ *  Shares hoverIdx with the donut + legend. */
+export default function StackedArea({ segs, series, hoverIdx = null, onEnter, onLeave }: Props) {
   const w = 760;
   const h = 200;
   const pad = 4;
+  const n = Math.max(1, series[0]?.length ?? 1);
 
-  // deterministic per-band series that converges to the current weight at t=n-1
-  const series = segs.map((s, i) => {
-    const r = lcg(900 + i * 13);
-    const arr: number[] = [];
-    for (let t = 0; t < n; t++) {
-      const f = t / (n - 1);
-      arr.push(Math.max(0.05, (s.pctNum || 0.1) * (1 + (r() - 0.5) * 0.7 * (1 - f))));
-    }
-    arr[n - 1] = s.pctNum || 0.1;
-    return arr;
-  });
-
-  // normalise each time-step to 100%
+  // normalise each time-step to 100% (values already sum to ~100, but guard drift)
   const norm = segs.map(() => new Array(n).fill(0));
   for (let t = 0; t < n; t++) {
     let sum = 0;
-    for (let i = 0; i < segs.length; i++) sum += series[i][t];
-    for (let i = 0; i < segs.length; i++) norm[i][t] = (series[i][t] / sum) * 100;
+    for (let i = 0; i < segs.length; i++) sum += series[i]?.[t] ?? 0;
+    for (let i = 0; i < segs.length; i++) norm[i][t] = sum > 0 ? ((series[i]?.[t] ?? 0) / sum) * 100 : 0;
   }
 
   const X = (t: number) => pad + (t * (w - 2 * pad)) / (n - 1);

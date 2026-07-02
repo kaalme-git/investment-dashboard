@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../../store/useStore";
+import InfoTip from "../../components/InfoTip";
 
 export default function HoldingsTab() {
   const navigate = useNavigate();
@@ -17,9 +18,22 @@ export default function HoldingsTab() {
           <span className="r">Mkt value</span>
           <span className="r">Day</span>
           <span className="r">Tot. ret.</span>
-          <span className="r">Yield</span>
+          <span className="r">
+            Yield
+            <InfoTip label="How Yield is calculated">
+              Forward dividend yield — next year's Inderes analyst dividend estimate ÷ current share price. If Inderes
+              doesn't cover the holding, it falls back to Yahoo Finance's trailing 12-month yield, and finally to the
+              trailing dividends from your own transactions.
+            </InfoTip>
+          </span>
           <span className="r">Weight</span>
-          <span className="c">Rec.</span>
+          <span className="c">
+            Rec.
+            <InfoTip label="About recommendations">
+              Recommendations reflect current Inderes analyst ratings (Buy / Accumulate / Reduce / Sell), shown only for
+              companies under Inderes coverage.
+            </InfoTip>
+          </span>
         </div>
         {holdingsGroups.map((g) => (
           <div key={g.key}>
@@ -60,9 +74,7 @@ export default function HoldingsTab() {
       </div>
       <div className="srcnote">
         Positions are built from your imported transactions (Transactions tab). Market prices, day change and total
-        return come from the connected market-data source. Yield is a forward yield — next-year Inderes dividend
-        estimate ÷ current price, falling back to the trailing market yield when no estimate exists. Recommendations
-        reflect current Inderes analyst ratings.
+        return come from the connected market-data source.
       </div>
     </>
   );

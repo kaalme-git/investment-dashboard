@@ -29,6 +29,11 @@ export default function SettingsScreen() {
   const assetCurrent = useStore((s) => s.portfolio.assetCurrent);
   const activePctNum = useStore((s) => s.portfolio.activePctNum);
   const passivePctNum = useStore((s) => s.portfolio.passivePctNum);
+  // Active/Passive targets are the tilt of your INVESTED assets (cash is its own
+  // allocation bucket, not active/passive), so show current as a share of invested.
+  const invested = activePctNum + passivePctNum;
+  const activeInv = invested > 0 ? (activePctNum / invested) * 100 : 0;
+  const passiveInv = invested > 0 ? (passivePctNum / invested) * 100 : 0;
 
   const editSum = EDIT_LABELS.reduce((s, l) => s + numv(targets[l]), 0);
   const cashTgt = Math.max(0, 100 - editSum);
@@ -57,8 +62,8 @@ export default function SettingsScreen() {
 
   const actTgt = numv(targets.Active);
   const styleDefs = [
-    { label: "Active", cur: activePctNum, tg: actTgt, editable: true, inputVal: targets.Active },
-    { label: "Passive", cur: passivePctNum, tg: Math.max(0, 100 - actTgt), editable: false, inputVal: "" as number | "" },
+    { label: "Active", cur: activeInv, tg: actTgt, editable: true, inputVal: targets.Active },
+    { label: "Passive", cur: passiveInv, tg: Math.max(0, 100 - actTgt), editable: false, inputVal: "" as number | "" },
   ];
   const styleRows: Row[] = styleDefs.map((d) => {
     const drift = d.cur - d.tg;
@@ -107,20 +112,10 @@ export default function SettingsScreen() {
             <div className="tgtsub">Active vs passive</div>
             <TargetTable head="Style" rows={styleRows} />
             <div className="modehint">
-              Bar = current weight; the line marks your target. Drift beyond ±5pp suggests rebalancing.
+              Bar = current weight; the line marks your target. Drift beyond ±5pp suggests rebalancing. Individual stocks
+              and actively-managed funds (incl. fixed income) count as active, index funds and ETFs as passive, shown as
+              a share of invested assets. Cash &amp; equivalents are their own bucket in the allocation view.
             </div>
-          </div>
-        </div>
-
-        <div className="card guidecard">
-          <div className="cardttl">Guidelines</div>
-          <div className="guidegrid">
-            <Guide k="Risk profile" v="Moderate–growth" />
-            <Guide k="Time horizon" v="10+ years" />
-            <Guide k="Rebalance band" v="±5 pp" num />
-            <Guide k="Max single position" v="15%" num />
-            <Guide k="Min cash buffer" v="5%" num />
-            <Guide k="Style preference" v="Core passive + satellite stocks" />
           </div>
         </div>
       </div>
@@ -164,15 +159,6 @@ function TargetTable({ head, rows }: { head: string; rows: Row[] }) {
           <span className={"num tgtdrift r " + r.driftCls}>{r.driftStr}</span>
         </div>
       ))}
-    </div>
-  );
-}
-
-function Guide({ k, v, num }: { k: string; v: string; num?: boolean }) {
-  return (
-    <div className="gd">
-      <div className="gdk">{k}</div>
-      <div className={"gdv" + (num ? " num" : "")}>{v}</div>
     </div>
   );
 }

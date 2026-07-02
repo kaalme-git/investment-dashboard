@@ -19,13 +19,14 @@ export interface UserSettings {
   notes: NotesMap;
   bench: string; // Overview benchmark selection
   calc: CalcPrefs | null; // Calculations inputs
+  styleOverrides: Record<string, "active" | "passive">; // per-instrument active/passive overrides (by ISIN)
 }
 
 export async function loadSettings(userId: string): Promise<Partial<UserSettings> | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("user_settings")
-    .select("strategy,targets,watchlist,notes,bench,calc")
+    .select("strategy,targets,watchlist,notes,bench,calc,style_overrides")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -37,6 +38,7 @@ export async function loadSettings(userId: string): Promise<Partial<UserSettings
     notes: (data.notes as NotesMap) ?? undefined,
     bench: (data.bench as string) ?? undefined,
     calc: (data.calc as CalcPrefs) ?? undefined,
+    styleOverrides: (data.style_overrides as UserSettings["styleOverrides"]) ?? undefined,
   };
 }
 
@@ -51,6 +53,7 @@ export async function saveSettings(userId: string, s: UserSettings): Promise<voi
       notes: s.notes,
       bench: s.bench,
       calc: s.calc,
+      style_overrides: s.styleOverrides,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id" },
