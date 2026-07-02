@@ -75,6 +75,30 @@ function differentPortfolioWarning(parsed: Txn[], existing: Txn[]): string | nul
   return `This file shares no transactions with your existing history and ${shared === 0 ? "none" : "few"} of its instruments match your current holdings — it looks like a different portfolio.`;
 }
 
+/** Outcome of the last CSV upload, shown in the Import card. */
+export interface ImportResult {
+  ok: boolean;
+  fileName: string;
+  message: string; // headline (e.g. "Import successful")
+  added?: number; // genuinely new transactions
+  skipped?: number; // rows already in the account (deduplicated)
+  total?: number; // transactions in the account after the import
+  range?: string; // date span covered by the uploaded file
+}
+
+const importSummary = (parsed: Txn[], added: number, total: number, name: string, replace: boolean): ImportResult => {
+  const dates = parsed.map((t) => t.date).filter(Boolean).sort();
+  return {
+    ok: true,
+    fileName: name,
+    message: replace ? "History replaced" : added > 0 ? "Import successful" : "Nothing new to import",
+    added,
+    skipped: Math.max(0, parsed.length - added),
+    total,
+    range: dates.length ? dates[0] + " → " + dates[dates.length - 1] : undefined,
+  };
+};
+
 // Commit an imported batch: merge (dedupe by Id) or replace-all. Handles both
 // the signed-in (Supabase) and local-mode (localStorage) paths.
 async function commitTxns(
@@ -87,17 +111,22 @@ async function commitTxns(
   if (!LOCAL_MODE && get().user) {
     set({ dataLoading: true, authError: null });
     try {
+      const before = replace ? 0 : get().txns.length;
       const merged = await dbSaveTxns(get().user!.id, parsed, replace ? "refresh" : "add");
       set({
         txns: merged,
         dataLoading: false,
         pendingImport: null,
         txFile: name + " · " + (replace ? "replaced — " : "") + merged.length + " transactions in account",
+        importResult: importSummary(parsed, merged.length - before, merged.length, name, replace),
         portfolio: buildPortfolio(merged, get().prices, get().styleOverrides),
       });
       void get().fetchPrices(true);
     } catch (e) {
-      set({ dataLoading: false, authError: "Import failed: " + String((e as Error)?.message || e) });
+      set({
+        dataLoading: false,
+        importResult: { ok: false, fileName: name, message: "Import failed: " + String((e as Error)?.message || e) },
+      });
     }
     return;
   }
@@ -108,6 +137,7 @@ async function commitTxns(
     txns: merged,
     pendingImport: null,
     txFile: name + " · " + merged.length + " transactions",
+    importResult: importSummary(parsed, merged.length - base.length, merged.length, name, replace),
     portfolio: buildPortfolio(merged, get().prices),
   });
   void get().fetchPrices(true);
@@ -130,6 +160,7 @@ function scheduleSettingsSave(get: () => DashState) {
       bench: s.bench,
       styleOverrides: s.styleOverrides,
       stockStyles: s.stockStyles,
+      depositExclusions: s.depositExclusions,
       calc: {
         ret: s.calcRet,
         monthly: s.calcMonthly,
@@ -222,6 +253,10 @@ interface DashState {
   bench: string;
   styleOverrides: StyleOverrides; // per-instrument active/passive overrides (by ISIN)
   stockStyles: Record<string, StockStyle>; // per-stock Growth/Cyclical/Defensive label (by ISIN)
+  // transactions marked "not a real deposit/withdrawal" (e.g. an IPO subscription
+  // payment) — excluded from the net-deposits chart & summary figure ONLY; the
+  // return engine (buildPortfolio/buildTWR) never sees this map.
+  depositExclusions: Record<string, true>; // keyed by transaction id
   period: TrendPeriod;
   allocMode: AllocDim;
   hoverAlloc: number | null;
@@ -239,6 +274,7 @@ interface DashState {
   txns: Txn[];
   txFile: string;
   pendingImport: PendingImport | null; // set when an upload looks like a different portfolio
+  importResult: ImportResult | null; // outcome of the last upload (shown in the Import card)
 
   // auth / account
   user: User | null;
@@ -289,6 +325,7 @@ interface DashState {
   setBench: (b: string) => void;
   setStyleOverride: (isin: string, v: "active" | "passive" | null) => void;
   setStockStyle: (isin: string, v: StockStyle | null) => void;
+  toggleDepositExclusion: (txnId: string) => void;
   setPeriod: (p: TrendPeriod) => void;
   setAllocMode: (m: AllocDim) => void;
   setHoverAlloc: (i: number | null) => void;
@@ -331,6 +368,7 @@ export const useStore = create<DashState>((set, get) => ({
   bench: "OMXH25",
   styleOverrides: {},
   stockStyles: {},
+  depositExclusions: {},
   period: "1Y",
   allocMode: "asset",
   hoverAlloc: null,
@@ -344,6 +382,7 @@ export const useStore = create<DashState>((set, get) => ({
 
   txns: INITIAL_TXNS,
   pendingImport: null,
+  importResult: null,
   txFile: LOCAL_MODE
     ? "transactions-and-notes-export.csv · loaded from your Nordnet export"
     : "No transactions yet — upload your Nordnet CSV",
@@ -433,6 +472,7 @@ export const useStore = create<DashState>((set, get) => ({
         // apply saved settings (fall back to existing defaults for any missing field)
         styleOverrides: settings?.styleOverrides ?? s.styleOverrides,
         stockStyles: settings?.stockStyles ?? s.stockStyles,
+        depositExclusions: settings?.depositExclusions ?? s.depositExclusions,
         strategyText: settings?.strategy ?? s.strategyText,
         targets: renameAlt(settings?.targets) ?? s.targets,
         watchlist: settings?.watchlist ?? s.watchlist,
@@ -520,6 +560,14 @@ export const useStore = create<DashState>((set, get) => ({
     set({ stockStyles: next }); // analysis composes in the tab — no portfolio rebuild needed
     scheduleSettingsSave(get);
   },
+  toggleDepositExclusion: (txnId) => {
+    if (!txnId) return;
+    const next = { ...get().depositExclusions };
+    if (next[txnId]) delete next[txnId];
+    else next[txnId] = true;
+    set({ depositExclusions: next }); // display-only (deposits chart + summary); returns unaffected
+    scheduleSettingsSave(get);
+  },
   setPeriod: (p) => set({ period: p }),
   setAllocMode: (m) => set({ allocMode: m, allocSelected: null }), // bucket indices differ per view
   setHoverAlloc: (i) => set({ hoverAlloc: i }),
@@ -528,40 +576,77 @@ export const useStore = create<DashState>((set, get) => ({
 
   setAiPrompt: (q) => set((s) => ({ ai: { ...s.ai, prompt: q } })),
 
-  // STUB: replace with a fetch('/api/ask') to the Claude serverless proxy.
+  // Real assistant: POST /api/ask (Groq free tier, server-side key) with a compact
+  // snapshot of the live portfolio as grounding + the Supabase session token so
+  // only signed-in users can spend the shared free-tier quota.
   askAi: (q) => {
     const prompt = (q ?? get().ai.prompt).trim();
     if (!prompt || get().ai.loading) return;
     set({ ai: { prompt, answer: "", loading: true, asked: true } });
-    window.setTimeout(() => {
-      set((s) => ({
-        ai: {
-          ...s.ai,
-          loading: false,
-          answer:
-            "Analysis is not wired up yet in this build. Once the Claude connector is enabled, " +
-            'this box will answer "' +
-            prompt +
-            '" using your live holdings, allocation and written strategy as grounding — in 3–6 measured, ' +
-            "number-specific sentences framed as educational analysis, not personalised investment advice.",
-        },
-      }));
-    }, 500);
+    void (async () => {
+      const fail = (msg: string) => set((s) => ({ ai: { ...s.ai, loading: false, answer: msg } }));
+      try {
+        const p = get().portfolio;
+        const st = get();
+        const context = {
+          asOf: new Date().toISOString().slice(0, 10),
+          kpis: p.kpis.map((k) => ({ label: k.label, value: k.value })),
+          holdings: p.holdingsGroups.flatMap((g) =>
+            g.rows.map((r) => ({
+              group: g.label, ticker: r.ticker, name: r.name, type: r.typeLbl, sector: r.sector,
+              value: r.valueStr, weight: r.weightStr, totalReturn: r.totalStr, fwdDivYield: r.yieldStr, inderesRec: r.recShort,
+            })),
+          ),
+          allocationPct: {
+            sector: p.allocMap.sector.map((x) => ({ label: x.label, pct: x.pctStr })),
+            region: p.allocMap.region.map((x) => ({ label: x.label, pct: x.pctStr })),
+            asset: p.allocMap.asset.map((x) => ({ label: x.label, pct: x.pctStr })),
+            style: p.allocMap.style.map((x) => ({ label: x.label, pct: x.pctStr })),
+          },
+          stockAnalysis: p.analysisStocks.map((a) => ({
+            ticker: a.ticker, pe: a.pe, peSource: a.peSrc, weightOfStocks: a.weightStr,
+            companyType: st.stockStyles[a.isin] ?? "unclassified",
+          })),
+          dividendsByYear: p.dividends,
+          targetAllocation: st.targets,
+          strategy: (st.strategyText || "").slice(0, 1500),
+        };
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (supabase) {
+          const { data } = await supabase.auth.getSession();
+          const token = data.session?.access_token;
+          if (token) headers.Authorization = "Bearer " + token;
+        }
+        const res = await fetch("/api/ask", { method: "POST", headers, body: JSON.stringify({ question: prompt, context }) });
+        const j = (await res.json().catch(() => ({}))) as { answer?: string; error?: string };
+        if (res.ok && j.answer) set((s) => ({ ai: { ...s.ai, loading: false, answer: j.answer as string } }));
+        else fail(j.error || "The assistant is unavailable right now — please try again.");
+      } catch {
+        fail("The assistant is unavailable right now — please try again.");
+      }
+    })();
   },
 
   // Upload merges by transaction Id (safe for full or partial exports). If the
   // file looks like a different portfolio, hold it and ask the user what to do.
   importCsv: async (text, name) => {
     const parsed = dedupeTxns(parseCsv(text));
-    if (!parsed.length) { set({ txFile: name + " · no valid transaction rows found", pendingImport: null }); return; }
+    if (!parsed.length) {
+      set({
+        txFile: name + " · no valid transaction rows found",
+        pendingImport: null,
+        importResult: { ok: false, fileName: name, message: "No transactions found — is this a Nordnet transactions export (.csv)?" },
+      });
+      return;
+    }
     const warn = differentPortfolioWarning(parsed, get().txns);
-    if (warn) { set({ pendingImport: { txns: parsed, name, message: warn } }); return; }
+    if (warn) { set({ pendingImport: { txns: parsed, name, message: warn }, importResult: null }); return; }
     await commitTxns(set, get, parsed, name, false);
   },
   resolveImport: async (action) => {
     const p = get().pendingImport;
     if (!p) return;
-    if (action === "cancel") { set({ pendingImport: null }); return; }
+    if (action === "cancel") { set({ pendingImport: null, importResult: null }); return; }
     await commitTxns(set, get, p.txns, p.name, action === "replace");
   },
   clearAllTxns: async () => {
@@ -575,6 +660,7 @@ export const useStore = create<DashState>((set, get) => ({
       txns: [],
       dataLoading: false,
       pendingImport: null,
+      importResult: null,
       txFile: "No transactions yet — upload your Nordnet CSV",
       portfolio: buildPortfolio([], get().prices),
     });

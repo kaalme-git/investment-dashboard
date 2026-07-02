@@ -24,3 +24,6 @@ NordnetData
 # temp local scripts
 _*.mjs
 _*.json
+
+# template with placeholders only — safe and meant to be public
+!.env.example

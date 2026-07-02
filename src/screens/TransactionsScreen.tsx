@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
 import { computeTx, type TxCategory } from "../data/transactions";
+import { eur } from "../data/format";
+import ProjectionChart from "../charts/ProjectionChart";
+
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const isoLocal = (d: Date) =>
+  d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 
 export default function TransactionsScreen() {
   const txns = useStore((s) => s.txns);
@@ -8,9 +14,47 @@ export default function TransactionsScreen() {
   const importCsv = useStore((s) => s.importCsv);
   const pendingImport = useStore((s) => s.pendingImport);
   const resolveImport = useStore((s) => s.resolveImport);
+  const importResult = useStore((s) => s.importResult);
   const clearAllTxns = useStore((s) => s.clearAllTxns);
+  const depositExclusions = useStore((s) => s.depositExclusions);
+  const toggleDepositExclusion = useStore((s) => s.toggleDepositExclusion);
 
   const c = computeTx(txns);
+
+  // ---- summary card: Summary vs Deposits view ----
+  const [sumView, setSumView] = useState<"summary" | "deposits">("summary");
+  const [depHover, setDepHover] = useState<number | null>(null);
+  const exclCount = Object.keys(depositExclusions).length;
+  // cumulative net deposits (deposits − withdrawals), sampled at each month end;
+  // transactions the user marked as excluded (e.g. IPO subscription payments) are
+  // skipped — DISPLAY ONLY, the return engine is untouched by this.
+  const dep = useMemo(() => {
+    const flows = txns
+      .filter((t) => (t.category === "deposit" || t.category === "withdrawal") && t.date && !depositExclusions[t.id])
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!flows.length) return null;
+    const first = new Date(flows[0].date + "T00:00:00");
+    const now = new Date();
+    const values: number[] = [];
+    const labels: string[] = [];
+    let fi = 0;
+    let cum = 0;
+    for (let d = new Date(first.getFullYear(), first.getMonth(), 1); d <= now; d.setMonth(d.getMonth() + 1)) {
+      const monthEnd = isoLocal(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+      while (fi < flows.length && flows[fi].date <= monthEnd) { cum += flows[fi].amount || 0; fi++; }
+      values.push(Math.round(cum));
+      labels.push(MONTH_ABBR[d.getMonth()] + " '" + String(d.getFullYear()).slice(2));
+    }
+    return { values, labels };
+  }, [txns, depositExclusions]);
+
+  // net-deposits figure honoring the exclusions (shown in Summary + chart caption)
+  const netDepositsStr = useMemo(() => {
+    const sum = txns
+      .filter((t) => (t.category === "deposit" || t.category === "withdrawal") && !depositExclusions[t.id])
+      .reduce((s, t) => s + (t.amount || 0), 0);
+    return eur(sum);
+  }, [txns, depositExclusions]);
 
   // ---- filters (default: whole history) ----
   // selTypes empty = all types; otherwise only the checked categories.
@@ -103,6 +147,23 @@ export default function TransactionsScreen() {
               <div className="dzttl">Drop your .csv here, or click to browse</div>
               <div className="dzsub">{txFile || "No file selected — accepts .csv"}</div>
             </label>
+            {importResult && !pendingImport && (
+              <div className={"importres " + (importResult.ok ? "ir-ok" : "ir-err")}>
+                <div className="irttl">{importResult.ok ? "✓" : "✕"} {importResult.message}</div>
+                <div className="irmsg">
+                  {importResult.ok ? (
+                    <>
+                      <b className="num">{importResult.added}</b> new transaction{importResult.added === 1 ? "" : "s"} added
+                      {(importResult.skipped ?? 0) > 0 && <> · <span className="num">{importResult.skipped}</span> already in your account (skipped)</>}
+                      {" · "}<span className="num">{importResult.total}</span> total
+                      {importResult.range && <> · file covers <span className="num">{importResult.range}</span></>}
+                    </>
+                  ) : (
+                    importResult.fileName
+                  )}
+                </div>
+              </div>
+            )}
             {pendingImport && (
               <div className="importwarn">
                 <div className="iwttl">Different portfolio?</div>
@@ -115,8 +176,10 @@ export default function TransactionsScreen() {
               </div>
             )}
             <div className="fmt">
-              Import your Nordnet transactions export (full or partial). New uploads are merged and deduplicated by
-              transaction ID, so only genuinely new rows are added — no duplicates.
+              <b>Important: export your FULL Nordnet history, across ALL your accounts</b> — set the date range to
+              cover everything. Positions, cost basis, returns and dividends are rebuilt from the transactions; a
+              partial history gives wrong numbers. Uploads are deduplicated, so re-uploading never
+              creates{" "}duplicates.
             </div>
             {txns.length > 0 && (
               <button
@@ -129,13 +192,23 @@ export default function TransactionsScreen() {
           </div>
 
           <div className="card sumcard">
-            <div className="cardttl">Import summary</div>
+            <div className="cardhd sm">
+              <span className="cardttl">{sumView === "summary" ? "Import summary" : "Net deposits"}</span>
+              <div className="periodrow">
+                <button className={"pbtn" + (sumView === "summary" ? " on" : "")} onClick={() => setSumView("summary")}>
+                  Summary
+                </button>
+                <button className={"pbtn" + (sumView === "deposits" ? " on" : "")} onClick={() => setSumView("deposits")}>
+                  Deposits
+                </button>
+              </div>
+            </div>
             {c.txEmpty ? (
               <div className="emptyhint">
-                No transactions yet. Upload your Nordnet CSV and your positions, cost basis, allocations and performance
-                are built from it.
+                No transactions yet. Upload your full Nordnet history — all accounts, from the very first transaction —
+                and your positions, cost basis, allocations and performance are built from it.
               </div>
-            ) : (
+            ) : sumView === "summary" ? (
               <>
                 <div className="sumgrid">
                   <div className="sumc">
@@ -151,8 +224,10 @@ export default function TransactionsScreen() {
                     <div className="sumv num">{c.txPosCount}</div>
                   </div>
                   <div className="sumc">
-                    <div className="sumk">Net deposits</div>
-                    <div className="sumv num">{c.txNetDepositsStr}</div>
+                    <div className="sumk">Net deposits{exclCount > 0 ? ` (${exclCount} excl.)` : ""}</div>
+                    <div className="sumv num" title={exclCount > 0 ? `Excludes ${exclCount} transaction${exclCount === 1 ? "" : "s"} you marked (e.g. IPO subscription payments)` : undefined}>
+                      {netDepositsStr}
+                    </div>
                   </div>
                 </div>
                 <div className="sumrange">
@@ -164,6 +239,27 @@ export default function TransactionsScreen() {
                   performance.
                 </div>
               </>
+            ) : dep && dep.values.length >= 2 ? (
+              <>
+                <div className="depwrap">
+                  <ProjectionChart
+                    exp={dep.values}
+                    target={0}
+                    baseYear={0}
+                    labels={dep.labels}
+                    height={228}
+                    hoverIdx={depHover}
+                    onHover={setDepHover}
+                  />
+                </div>
+                <div className="modehint">
+                  Cumulative deposits minus withdrawals by month — the capital you've actually put in
+                  ({netDepositsStr} today{exclCount > 0 ? `, excluding ${exclCount} marked transaction${exclCount === 1 ? "" : "s"}` : ""}).
+                  Mark e.g. IPO subscription payments as excluded in the transaction list below.
+                </div>
+              </>
+            ) : (
+              <div className="emptyhint">No deposit or withdrawal transactions to chart yet.</div>
             )}
           </div>
         </div>
@@ -229,23 +325,41 @@ export default function TransactionsScreen() {
                 <span className="r">Qty</span>
                 <span className="r">Price</span>
                 <span className="r">Amount</span>
+                <span />
               </div>
               {rows.length === 0 ? (
                 <div className="emptyhint" style={{ padding: "18px 4px" }}>No transactions match these filters.</div>
               ) : (
-                rows.map((t) => (
-                  <div className="txtrow" key={t.i}>
-                    <span className="num">{t.date}</span>
-                    <span>
-                      <span className={t.typeCls}>{t.type}</span>
-                    </span>
-                    <span className="num dtick">{t.ticker}</span>
-                    <span className="dname">{t.name}</span>
-                    <span className="num r">{t.qtyStr}</span>
-                    <span className="num r">{t.priceStr}</span>
-                    <span className="num r">{t.amtStr}</span>
-                  </div>
-                ))
+                rows.map((t) => {
+                  const excludable = t.cat === "deposit" || t.cat === "withdrawal";
+                  const excluded = !!depositExclusions[t.id];
+                  return (
+                    <div className={"txtrow" + (excluded ? " txexcluded" : "")} key={t.i}>
+                      <span className="num">{t.date}</span>
+                      <span>
+                        <span className={t.typeCls}>{t.type}</span>
+                      </span>
+                      <span className="num dtick">{t.ticker}</span>
+                      <span className="dname">{t.name}</span>
+                      <span className="num r">{t.qtyStr}</span>
+                      <span className="num r">{t.priceStr}</span>
+                      <span className="num r txamt">{t.amtStr}</span>
+                      <span className="c">
+                        {excludable && (
+                          <button
+                            className={"txexbtn" + (excluded ? " on" : "")}
+                            onClick={() => toggleDepositExclusion(t.id)}
+                            title={excluded
+                              ? "Excluded from net deposits — click to include again"
+                              : "Exclude from net deposits (e.g. an IPO subscription payment)"}
+                          >
+                            {excluded ? "↩" : "⊘"}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </>

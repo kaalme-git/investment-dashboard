@@ -199,6 +199,7 @@ export interface PosRow {
 }
 export interface TxRow {
   i: number;
+  id: string; // stable Nordnet transaction id (for per-transaction overrides)
   date: string;
   cat: TxCategory;
   type: string;
@@ -275,6 +276,7 @@ export function computeTx(txns: Txn[]): TxComputed {
   const txRows: TxRow[] = txns
     .map((t, i) => ({
       i,
+      id: t.id,
       date: t.date || "—",
       cat: t.category,
       type: TYPE_LABEL[t.category],

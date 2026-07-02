@@ -17,11 +17,28 @@ try {
 } catch { /* no .env.local → direct-Yahoo fallback */ }
 
 const { resolvePrices, cacheEnabled } = await import("./api/_lib/cache.mjs");
+const { answerQuestion } = await import("./api/_lib/ask.mjs");
 
 const PORT = 5174;
 http
   .createServer((req, res) => {
     const u = new URL(req.url, "http://localhost");
+    if (u.pathname === "/api/ask") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", async () => {
+        try {
+          const b = body ? JSON.parse(body) : {};
+          const out = await answerQuestion({ question: b.question, context: b.context, authHeader: req.headers.authorization });
+          res.writeHead(out.status, { "content-type": "application/json", "access-control-allow-origin": "*" });
+          res.end(JSON.stringify(out.body));
+        } catch (e) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: String(e?.message || e) }));
+        }
+      });
+      return;
+    }
     if (u.pathname !== "/api/prices") { res.writeHead(404); res.end(); return; }
     let body = "";
     req.on("data", (c) => (body += c));

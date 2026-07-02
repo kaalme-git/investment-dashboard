@@ -21,13 +21,14 @@ export interface UserSettings {
   calc: CalcPrefs | null; // Calculations inputs
   styleOverrides: Record<string, "active" | "passive">; // per-instrument active/passive overrides (by ISIN)
   stockStyles: Record<string, "growth" | "cyclical" | "defensive" | "neutral">; // per-stock company type (by ISIN)
+  depositExclusions: Record<string, true>; // txn ids excluded from net-deposit figures (display only)
 }
 
 export async function loadSettings(userId: string): Promise<Partial<UserSettings> | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("user_settings")
-    .select("strategy,targets,watchlist,notes,bench,calc,style_overrides,stock_styles")
+    .select("strategy,targets,watchlist,notes,bench,calc,style_overrides,stock_styles,deposit_exclusions")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -41,6 +42,7 @@ export async function loadSettings(userId: string): Promise<Partial<UserSettings
     calc: (data.calc as CalcPrefs) ?? undefined,
     styleOverrides: (data.style_overrides as UserSettings["styleOverrides"]) ?? undefined,
     stockStyles: (data.stock_styles as UserSettings["stockStyles"]) ?? undefined,
+    depositExclusions: (data.deposit_exclusions as UserSettings["depositExclusions"]) ?? undefined,
   };
 }
 
@@ -57,6 +59,7 @@ export async function saveSettings(userId: string, s: UserSettings): Promise<voi
       calc: s.calc,
       style_overrides: s.styleOverrides,
       stock_styles: s.stockStyles,
+      deposit_exclusions: s.depositExclusions,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id" },

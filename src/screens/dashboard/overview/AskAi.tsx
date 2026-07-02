@@ -21,7 +21,7 @@ export default function AskAi() {
         <span className="aibadge">AI</span>
       </div>
       <div className="aisub">
-        Instant analysis of your holdings, allocation and risk — powered by Claude, grounded in the data on this page.
+        Instant analysis of your holdings, allocation and risk — grounded in the live data on this page.
       </div>
       <div className="airow">
         <div className="aiinwrap">
