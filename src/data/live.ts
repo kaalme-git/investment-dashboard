@@ -200,11 +200,15 @@ interface Sec {
 
 const shareSign = (c: string): number => (c === "buy" || c === "transfer_in" ? 1 : c === "sell" || c === "transfer_out" ? -1 : 0);
 
-// last known transaction price per isin (fallback when no market feed)
+// last known transaction price per isin (fallback when no market feed).
+// ONLY trade rows (buy/sell/transfer) carry a real per-share price; dividend/tax
+// rows put the dividend-per-share in `price` (e.g. €0.22), which must never be
+// mistaken for the share price — doing so under-values the holding ~60× and makes
+// a later sale look like a huge phantom gain. Restrict to shareSign ≠ 0 rows.
 function lastTxnPrice(txns: Txn[]): Record<string, number> {
   const m: Record<string, number> = {};
   txns
-    .filter((t) => t.price > 0 && (t.isin || t.ticker))
+    .filter((t) => t.price > 0 && shareSign(t.category) !== 0 && (t.isin || t.ticker))
     .sort((a, b) => (a.date < b.date ? -1 : 1))
     .forEach((t) => (m[t.isin || t.ticker] = t.price));
   return m;
@@ -541,20 +545,33 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap): Portfolio {
   };
 }
 
-// ---- TWR engine ----
+// ---- TWR engine (Own Capital methodology) ----
+// Nordnet convention: RES_t = OC_t − OC_{t-1} − CF_t ; RET_t = RES_t / |OC_{t-1} + CFI_t| ;
+// RETP = Π(1 + RET_t) − 1. OC = market value of holdings + cash. Only EXTERNAL movements
+// (deposits, withdrawals, securities transfers) are cash flows (CF); buys, sells and
+// DIVIDENDS are internal — a dividend's ex-div price drop and the received cash both sit
+// inside OC, so it nets out automatically (no dividend credit needed, no double-count).
+// We keep per-sleeve values + per-sleeve flows so the stocks/funds/cash toggle can compute
+// the same identity on any subset (movements crossing the subset boundary become its CF).
 interface TWR {
   dates: string[]; // YYYY-MM-DD weekly grid
   stocksValue: number[];
   fundsValue: number[];
-  cashValue: number[];
-  rStocks: number[];
-  rFunds: number[];
+  cashValue: number[]; // real cash balance + money-market funds
+  extCash: number[]; // deposits + withdrawals (signed net), into the cash sleeve
+  extCashIn: number[]; // deposits only (positive inflow part) → CFI
+  buyS: number[]; buyF: number[]; // cash → sleeve (buy cost)
+  sellS: number[]; sellF: number[]; // sleeve → cash (sell proceeds)
+  divS: number[]; divF: number[]; // sleeve → cash (dividends)
+  xInS: number[]; xInF: number[]; // securities transferred IN (market value, external)
+  xOutS: number[]; xOutF: number[]; // securities transferred OUT
   bench: Record<string, number[]>; // per UI key, index level aligned to grid
 }
 
 function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, number>, keyOf: (t: Txn) => string): TWR {
   const dated = asc.filter((t) => t.date);
-  if (!dated.length) return { dates: [], stocksValue: [], fundsValue: [], cashValue: [], rStocks: [], rFunds: [], bench: {} };
+  const empty: TWR = { dates: [], stocksValue: [], fundsValue: [], cashValue: [], extCash: [], extCashIn: [], buyS: [], buyF: [], sellS: [], sellF: [], divS: [], divF: [], xInS: [], xInF: [], xOutS: [], xOutF: [], bench: {} };
+  if (!dated.length) return empty;
 
   const WEEK = 7 * 864e5;
   const startMs = +new Date(dated[0].date);
@@ -584,65 +601,54 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
   });
 
   const held: Record<string, number> = {};
-  const sleeveVal = (sl: Sleeve, t: number): number => {
-    let v = 0;
-    for (const [k, u] of universe) {
-      if (u.sleeve !== sl || !held[k]) continue;
-      v += held[k] * asOf(u.hist, t, u.fb);
-    }
-    return v;
-  };
+  const priceAt = (u: { hist: { d: number; v: number }[]; fb: number }, t: number) => asOf(u.hist, t, u.fb);
 
-  const stocksValue: number[] = [];
-  const fundsValue: number[] = [];
-  const cashValue: number[] = [];
-  const rStocks: number[] = [];
-  const rFunds: number[] = [];
+  const stocksValue: number[] = [], fundsValue: number[] = [], cashValue: number[] = [];
+  const extCash: number[] = [], extCashIn: number[] = [];
+  const buyS: number[] = [], buyF: number[] = [], sellS: number[] = [], sellF: number[] = [];
+  const divS: number[] = [], divF: number[] = [], xInS: number[] = [], xInF: number[] = [], xOutS: number[] = [], xOutF: number[] = [];
 
   let ti = 0;
   let cashBal = 0;
-  const flow: Record<Sleeve, number> = { stocks: 0, funds: 0, cash: 0 };
-  const div: Record<Sleeve, number> = { stocks: 0, funds: 0, cash: 0 };
 
   for (let gi = 0; gi < PN; gi++) {
     const gd = grid[gi];
-    flow.stocks = 0; flow.funds = 0; flow.cash = 0;
-    div.stocks = 0; div.funds = 0; div.cash = 0;
-    // apply all txns up to this grid point
+    // per-week flow buckets, classified by sleeve; external (deposit/withdrawal/transfer)
+    // vs internal (buy/sell/dividend) — the split is what makes the OC identity hold.
+    let eC = 0, eCI = 0, bS = 0, bF = 0, sS = 0, sF = 0, dS = 0, dF = 0, xiS = 0, xiF = 0, xoS = 0, xoF = 0;
     while (ti < dated.length && +new Date(dated[ti].date) <= gd) {
       const t = dated[ti];
       cashBal += t.amount || 0;
       const sign = shareSign(t.category);
       const k = keyOf(t);
       const u = k ? universe.get(k) : undefined;
-      if (sign !== 0 && k) {
-        held[k] = (held[k] || 0) + sign * t.qty;
-        if (u && u.sleeve !== "cash") {
-          // external flow into the sleeve (market value for transfers, cash for trades)
-          if (t.category === "buy") flow[u.sleeve] += t.acqValue > 0 ? t.acqValue : t.qty * t.price + t.fee;
-          else if (t.category === "sell") flow[u.sleeve] -= t.qty * t.price - t.fee;
-          else if (t.category === "transfer_in") flow[u.sleeve] += t.qty * asOf(u.hist, +new Date(t.date), u.fb);
-          else if (t.category === "transfer_out") flow[u.sleeve] -= t.qty * asOf(u.hist, +new Date(t.date), u.fb);
-        }
-      } else if (t.category === "dividend" && u && u.sleeve !== "cash") {
-        // dividend cash leaves the instrument (ex-div price drop is in the series) but
-        // is retained → credit it to the sleeve's return so this is a TOTAL return.
-        div[u.sleeve] += t.amount || 0;
-      }
+      if (sign !== 0 && k) held[k] = (held[k] || 0) + sign * t.qty;
+      const sl = u?.sleeve; // "stocks" | "funds" | "cash" | undefined
+      const c = t.category;
+      if (c === "deposit") { eC += t.amount || 0; eCI += Math.max(0, t.amount || 0); }
+      else if (c === "withdrawal") { eC += t.amount || 0; } // amount is negative
+      else if (c === "buy" && (sl === "stocks" || sl === "funds")) { const cost = t.acqValue > 0 ? t.acqValue : t.qty * t.price + t.fee; if (sl === "stocks") bS += cost; else bF += cost; }
+      else if (c === "sell" && (sl === "stocks" || sl === "funds")) { const pr = t.qty * t.price - t.fee; if (sl === "stocks") sS += pr; else sF += pr; }
+      else if (c === "dividend" && (sl === "stocks" || sl === "funds")) { if (sl === "stocks") dS += t.amount || 0; else dF += t.amount || 0; }
+      else if (c === "transfer_in" && (sl === "stocks" || sl === "funds") && u) { const mv = t.qty * priceAt(u, +new Date(t.date)); if (sl === "stocks") xiS += mv; else xiF += mv; }
+      else if (c === "transfer_out" && (sl === "stocks" || sl === "funds") && u) { const mv = t.qty * priceAt(u, +new Date(t.date)); if (sl === "stocks") xoS += mv; else xoF += mv; }
+      // fee / tax / interest / other: internal, already reflected in cashBal (net-of-cost return)
       ti++;
     }
-    const vs = sleeveVal("stocks", gd);
-    const vf = sleeveVal("funds", gd);
-    const vc = Math.max(0, cashBal) + sleeveVal("cash", gd); // cash + money-market funds
-    stocksValue.push(Math.round(vs));
-    fundsValue.push(Math.round(vf));
-    cashValue.push(Math.round(vc));
-    if (gi === 0) { rStocks.push(0); rFunds.push(0); }
-    else {
-      const ps = stocksValue[gi - 1], pf = fundsValue[gi - 1];
-      rStocks.push(ps > 0 ? (vs - ps - flow.stocks + div.stocks) / ps : 0);
-      rFunds.push(pf > 0 ? (vf - pf - flow.funds + div.funds) / pf : 0);
+    // sleeve market values at this grid point
+    let vs = 0, vf = 0, vc = 0;
+    for (const [k, u] of universe) {
+      const q = held[k];
+      if (!q) continue;
+      const val = q * priceAt(u, gd);
+      if (u.sleeve === "stocks") vs += val;
+      else if (u.sleeve === "funds") vf += val;
+      else vc += val; // money-market funds count as cash
     }
+    stocksValue.push(vs); fundsValue.push(vf); cashValue.push(Math.max(0, cashBal) + vc);
+    extCash.push(eC); extCashIn.push(eCI);
+    buyS.push(bS); buyF.push(bF); sellS.push(sS); sellF.push(sF); divS.push(dS); divF.push(dF);
+    xInS.push(xiS); xInF.push(xiF); xOutS.push(xoS); xOutF.push(xoF);
   }
 
   // benchmarks aligned to grid
@@ -655,7 +661,7 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
   }
 
   const dates = grid.map((ms) => new Date(ms).toISOString().slice(0, 10));
-  return { dates, stocksValue, fundsValue, cashValue, rStocks, rFunds, bench };
+  return { dates, stocksValue, fundsValue, cashValue, extCash, extCashIn, buyS, buyF, sellS, sellF, divS, divF, xInS, xInF, xOutS, xOutF, bench };
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -682,18 +688,29 @@ function computePerformance(twr: TWR, benchKey: string, period: TrendPeriod, gro
     start = first > 0 ? first - 1 : 0;
   } else start = Math.max(0, PN - 1 - (WEEKS[period] ?? 52));
 
-  const sleeves = [
-    { on: groups.stocks, val: twr.stocksValue, r: twr.rStocks },
-    { on: groups.funds, val: twr.fundsValue, r: twr.rFunds },
-    { on: groups.cash, val: twr.cashValue, r: null as number[] | null },
-  ].filter((s) => s.on);
+  // Own Capital of the selected subset = market value of its sleeves (+ cash if selected).
+  const selS = groups.stocks, selF = groups.funds, selC = groups.cash;
+  const OC = (t: number) => (selS ? twr.stocksValue[t] : 0) + (selF ? twr.fundsValue[t] : 0) + (selC ? twr.cashValue[t] : 0);
 
+  // A movement is a cash flow (CF) for the subset only when it CROSSES the subset boundary.
+  // With the whole account selected, buys/sells/dividends are internal (net to 0) and only
+  // deposits/withdrawals/transfers count — exactly the Nordnet Own Capital methodology.
   const a: number[] = [100];
   for (let t = start + 1; t < PN; t++) {
-    const denom = sleeves.reduce((s, sl) => s + sl.val[t - 1], 0);
-    let cr = 0;
-    if (denom > 0) for (const sl of sleeves) cr += (sl.val[t - 1] / denom) * (sl.r ? sl.r[t] : 0);
-    a.push(a[a.length - 1] * (1 + cr));
+    const prev = OC(t - 1), cur = OC(t);
+    let CF = 0, CFI = 0; // net flow, and inflow-only part (for the denominator)
+    if (selC) { CF += twr.extCash[t]; CFI += twr.extCashIn[t]; } // deposits/withdrawals hit cash
+    const sleeve = (sel: boolean, buy: number, sell: number, div: number, xIn: number, xOut: number) => {
+      if (sel) { CF += xIn - xOut; CFI += xIn; } // transfers are external to the account
+      if (sel && !selC) { CF += buy - sell - div; CFI += buy; } // cash is outside: buy in, sell/div out
+      else if (!sel && selC) { CF += sell + div - buy; CFI += sell + div; } // sleeve outside: sell/div in
+      // sel && selC → fully internal (no CF); !sel && !selC → does not touch the subset
+    };
+    sleeve(selS, twr.buyS[t], twr.sellS[t], twr.divS[t], twr.xInS[t], twr.xOutS[t]);
+    sleeve(selF, twr.buyF[t], twr.sellF[t], twr.divF[t], twr.xInF[t], twr.xOutF[t]);
+    const denom = Math.abs(prev + CFI);
+    const ret = denom > 1e-6 ? (cur - prev - CF) / denom : 0;
+    a.push(a[a.length - 1] * (1 + ret));
   }
 
   const benchRaw = (twr.bench[benchKey] || twr.bench.OMXH25 || []).slice(start);

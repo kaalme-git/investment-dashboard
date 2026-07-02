@@ -84,6 +84,12 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
   const stale = uniq.filter((isin) => {
     const m = metaBy[isin];
     if (force || !m || !m.quote_updated_at) return true;
+    // A found instrument with zero stored history is incomplete (Yahoo's chart
+    // endpoint likely got rate-limited on an earlier batch fetch). Keep retrying
+    // it — decoupled from the quote TTL — until history backfills. Once stored,
+    // this stops firing. Without this, such instruments stay frozen at a flat
+    // fallback price, distorting returns and hiding the 3-month sparkline.
+    if (m.found && !(histBy[isin] && histBy[isin].length)) return true;
     return now - new Date(m.quote_updated_at).getTime() >= QUOTE_TTL;
   });
 

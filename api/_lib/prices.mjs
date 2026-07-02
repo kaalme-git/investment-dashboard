@@ -58,13 +58,20 @@ export async function fetchInstrument(isin, period1) {
   const fx = await fxConverter(cur, period1);
   const conv = (v) => (v / minorDiv) * fx.current;
 
+  // Weekly history. Yahoo's chart endpoint rate-limits under batch load and then
+  // throws (or returns nothing) — retry a few times with backoff so a transient
+  // limit doesn't leave the instrument permanently history-less in the cache.
   let history = [];
-  try {
-    const c = await yf.chart(sym, { period1, interval: "1wk" });
-    history = (c?.quotes || [])
-      .filter((r) => r.close != null)
-      .map((r) => ({ date: r.date.toISOString().slice(0, 10), close: +((r.close / minorDiv) * fx.at(r.date)).toFixed(4) }));
-  } catch { /* history optional */ }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const c = await yf.chart(sym, { period1, interval: "1wk" });
+      history = (c?.quotes || [])
+        .filter((r) => r.close != null)
+        .map((r) => ({ date: r.date.toISOString().slice(0, 10), close: +((r.close / minorDiv) * fx.at(r.date)).toFixed(4) }));
+      if (history.length) break;
+    } catch { /* rate-limited or transient — retry */ }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+  }
 
   const t = type || q.quoteType || "EQUITY";
   const name = q.longName || q.shortName || sname;
