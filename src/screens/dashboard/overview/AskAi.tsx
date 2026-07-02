@@ -3,8 +3,10 @@ import { useStore } from "../../../store/useStore";
 const CHIPS = [
   { label: "How concentrated is it?", q: "How concentrated is my portfolio and is that a risk?" },
   { label: "Biggest risks?", q: "What are the biggest risks in my portfolio right now?" },
-  { label: "Inderes Buy-rated holdings", q: "Which of my holdings does Inderes rate Buy or Accumulate, and what share of the portfolio is that?" },
-  { label: "Is my allocation balanced?", q: "Is my sector and geographic allocation well balanced?" },
+  { label: "Allocation vs targets", q: "How far is my current allocation from my targets, and what would rebalancing require?" },
+  { label: "Growth or defensive tilt?", q: "Is my stock portfolio tilted toward growth, cyclical or defensive companies, and what does that imply?" },
+  { label: "Following my strategy?", q: "Does my current portfolio follow the strategy I've written, and where does it deviate?" },
+  { label: "Where did my value come from?", q: "Break down how my portfolio reached its current value — contributions, transferred shares, dividends and market returns — and put the market returns in context." },
 ];
 
 export default function AskAi() {

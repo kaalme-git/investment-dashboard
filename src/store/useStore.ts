@@ -608,7 +608,54 @@ export const useStore = create<DashState>((set, get) => ({
             companyType: st.stockStyles[a.isin] ?? "unclassified",
           })),
           dividendsByYear: p.dividends,
+          // time-weighted return vs the selected benchmark (whole account, all buckets)
+          performance: (["YTD", "1Y", "Max"] as TrendPeriod[]).map((period) => {
+            const pf = p.getPerformance(st.bench, period, { stocks: true, eqFunds: true, fiFunds: true, other: true, cash: true });
+            return { period, portfolio: pf.perfPortStr, benchmark: pf.perfBenchStr, benchmarkName: pf.benchName };
+          }),
           targetAllocation: st.targets,
+          // APPROXIMATE value bridge: how the current value was reached. All math is
+          // precomputed here so the model only narrates; returns = residual.
+          valueBridge: (() => {
+            const txs = st.txns;
+            const excl = st.depositExclusions;
+            const fsum = (pred: (t: (typeof txs)[number]) => boolean) => txs.filter(pred).reduce((s, t) => s + (t.amount || 0), 0);
+            const netDeposits = fsum((t) => (t.category === "deposit" || t.category === "withdrawal") && !excl[t.id]);
+            const dividendsGross = fsum((t) => t.category === "dividend");
+            const withholdingTax = fsum((t) => t.category === "tax");
+            const interest = fsum((t) => t.category === "interest");
+            const fees = fsum((t) => t.category === "fee");
+            // securities received in kind, at acquisition value. Corporate actions net
+            // to zero: any date with transfers in BOTH directions is a swap/demerger,
+            // and a same-qty out within 14 days pairs with its in (subscription
+            // round-trips). Excluded withdrawals (IPO subscription payments) are
+            // subtracted so the IPO pair nets out instead of double counting.
+            const outs = txs.filter((t) => t.category === "transfer_out");
+            const swapDates = new Set(outs.map((o) => o.date).filter((d) => txs.some((t) => t.category === "transfer_in" && t.date === d)));
+            const usedOut = new Set<number>();
+            let inKind = 0;
+            for (const t of txs) {
+              if (t.category !== "transfer_in" || swapDates.has(t.date)) continue;
+              const tMs = +new Date(t.date);
+              const oi = outs.findIndex((o, idx) => !usedOut.has(idx) && !swapDates.has(o.date) && Math.abs(o.qty - t.qty) < 1e-6 && Math.abs(+new Date(o.date) - tMs) <= 14 * 864e5);
+              if (oi >= 0) { usedOut.add(oi); continue; }
+              inKind += t.acqValue || 0;
+            }
+            const excludedWd = Math.abs(fsum((t) => t.category === "withdrawal" && !!excl[t.id]));
+            inKind = Math.max(0, inKind - excludedWd);
+            const marketReturns = p.totalValue - (netDeposits + inKind + dividendsGross + withholdingTax + interest + fees);
+            const fmt = (n: number) => (n < 0 ? "−€" : "€") + Math.abs(Math.round(n)).toLocaleString("en-US");
+            return {
+              netDeposits: fmt(netDeposits),
+              inKindTransfers: fmt(inKind),
+              dividendsGross: fmt(dividendsGross),
+              withholdingTax: fmt(withholdingTax),
+              interest: fmt(interest),
+              fees: fmt(fees),
+              marketReturnsEUR: fmt(marketReturns),
+              currentValue: fmt(p.totalValue),
+            };
+          })(),
           strategy: (st.strategyText || "").slice(0, 1500),
         };
         const headers: Record<string, string> = { "content-type": "application/json" };
