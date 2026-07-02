@@ -87,12 +87,13 @@ export default function AllocationTab() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card alloctime">
         <div className="cardhd sm">
           <span className="cardttl sm">Allocation over time</span>
+          <span className="sacap">Hover a band to see the bucket and its share</span>
         </div>
         <div className="satimewrap">
-          <StackedArea segs={areaSegs} series={areaSeries} />
+          <StackedArea segs={areaSegs} series={areaSeries} dates={allocDates} />
         </div>
         <div className="saxis">
           <span>{fmtMonth(allocDates[0])}</span>

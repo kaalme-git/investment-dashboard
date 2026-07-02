@@ -3,10 +3,12 @@ import { useStore } from "../../store/useStore";
 import LineChart from "../../charts/LineChart";
 
 const PERIODS: TrendPeriod[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "Max"];
-const GROUPS: { key: "stocks" | "funds" | "cash"; label: string }[] = [
+const GROUPS: { key: "stocks" | "eqFunds" | "fiFunds" | "other" | "cash"; label: string }[] = [
   { key: "stocks", label: "Stocks" },
-  { key: "funds", label: "Funds & ETFs" },
-  { key: "cash", label: "Cash & equivalent" },
+  { key: "eqFunds", label: "Equity funds" },
+  { key: "fiFunds", label: "Fixed income" },
+  { key: "other", label: "Other" },
+  { key: "cash", label: "Cash & equivalents" },
 ];
 
 export default function PerformanceTab() {
@@ -18,7 +20,9 @@ export default function PerformanceTab() {
   const perfGroups = useStore((s) => s.perfGroups);
   const togglePerfGroup = useStore((s) => s.togglePerfGroup);
   const getPerformance = useStore((s) => s.portfolio.getPerformance);
+  const perfAvailable = useStore((s) => s.portfolio.perfAvailable);
 
+  const groups = GROUPS.filter((g) => perfAvailable[g.key]); // hide buckets with no assets
   const perf = getPerformance(bench, period, perfGroups);
 
   return (
@@ -44,7 +48,7 @@ export default function PerformanceTab() {
         <div className="grptoggle" style={{ marginTop: 14 }}>
           <span className="grplbl">Include</span>
           <div className="toggle">
-            {GROUPS.map((g) => (
+            {groups.map((g) => (
               <button key={g.key} className={"tgl" + (perfGroups[g.key] ? " on" : "")} onClick={() => togglePerfGroup(g.key)}>
                 {g.label}
               </button>

@@ -1,7 +1,7 @@
 import { useStore } from "../store/useStore";
 
-const TGT_LABELS = ["Equities", "Fixed income", "Alternatives", "Cash & equivalent"];
-const EDIT_LABELS = ["Equities", "Fixed income", "Alternatives"];
+const TGT_LABELS = ["Equities", "Fixed income", "Other", "Cash & equivalent"];
+const EDIT_LABELS = ["Equities", "Fixed income", "Other"];
 
 const numv = (v: number | "") => (typeof v === "number" ? v : 0);
 const driftStr = (d: number) => (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);

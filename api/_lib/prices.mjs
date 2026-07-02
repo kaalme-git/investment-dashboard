@@ -103,6 +103,8 @@ export async function fetchInstrument(isin, period1) {
   const divYield = q.trailingAnnualDividendYield != null
     ? +(q.trailingAnnualDividendYield * 100).toFixed(2)
     : q.dividendYield != null ? +(+q.dividendYield).toFixed(2) : 0;
+  // trailing P/E (ratio — currency-independent); fallback source when Inderes has no EPS estimate
+  const peTrailing = t === "EQUITY" && q.trailingPE != null && q.trailingPE > 0 ? +(+q.trailingPE).toFixed(2) : null;
 
   let sector = null, country = null, assetClass = null;
   let sectorWeights = null, regionHint = null;
@@ -173,6 +175,7 @@ export async function fetchInstrument(isin, period1) {
     regionHint, // dominant country of top holdings (fund region fallback)
     moneyMarket,
     divYield,
+    peTrailing, // Yahoo trailing P/E (stocks only, >0)
     history,
   };
 }

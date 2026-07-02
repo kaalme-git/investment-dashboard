@@ -53,6 +53,7 @@ export default async function handler(_req, res) {
         target_price: r?.targetPrice ?? null,
         rec_date: r?.recDate ?? null,
         div_estimates: r?.divEstimates ?? null, // DPS estimates for T, T+1, T+2
+        eps_estimates: r?.epsEstimates ?? null, // EPS estimates for T, T+1, T+2 (→ P/E)
         rec_updated_at: stamp,
       };
     });

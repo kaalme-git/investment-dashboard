@@ -3,9 +3,11 @@ import { useStore } from "../../../store/useStore";
 import LineChart from "../../../charts/LineChart";
 
 const PERIODS: TrendPeriod[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "Max"];
-const GROUPS: { key: "stocks" | "funds" | "cash"; label: string }[] = [
+const GROUPS: { key: "stocks" | "eqFunds" | "fiFunds" | "other" | "cash"; label: string }[] = [
   { key: "stocks", label: "Stocks" },
-  { key: "funds", label: "Funds" },
+  { key: "eqFunds", label: "Equity funds" },
+  { key: "fiFunds", label: "Fixed income" },
+  { key: "other", label: "Other" },
   { key: "cash", label: "Cash & eq." },
 ];
 
@@ -18,7 +20,9 @@ export default function ValueChartCard() {
   const perfGroups = useStore((s) => s.perfGroups);
   const togglePerfGroup = useStore((s) => s.togglePerfGroup);
   const getPerformance = useStore((s) => s.portfolio.getPerformance);
+  const perfAvailable = useStore((s) => s.portfolio.perfAvailable);
 
+  const groups = GROUPS.filter((g) => perfAvailable[g.key]); // hide buckets with no assets
   const perf = getPerformance(bench, period, perfGroups);
 
   return (
@@ -37,7 +41,7 @@ export default function ValueChartCard() {
       <div className="grptoggle">
         <span className="grplbl">Include</span>
         <div className="toggle">
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <button key={g.key} className={"tgl" + (perfGroups[g.key] ? " on" : "")} onClick={() => togglePerfGroup(g.key)}>
               {g.label}
             </button>
@@ -78,7 +82,8 @@ export default function ValueChartCard() {
       </div>
       <div className="modehint" style={{ marginTop: 8 }}>
         Time-weighted return (Nordnet convention — deposits/withdrawals excluded) across your {" "}
-        {[perfGroups.stocks && "stocks", perfGroups.funds && "funds", perfGroups.cash && "cash"].filter(Boolean).join(" + ") || "—"}, including instruments since sold. See the Performance tab for detail.
+        {groups.filter((g) => perfGroups[g.key]).map((g) => g.label.toLowerCase()).join(" + ") || "—"}, including
+        instruments since sold. See the Performance tab for detail.
       </div>
     </div>
   );

@@ -4,6 +4,10 @@ import type { TrendPeriod } from "../data/portfolio";
 import { parseCsv, type Txn } from "../data/transactions";
 import { REAL_TXNS_CSV } from "../data/realTxns";
 import { buildPortfolio, BENCH_SYMBOL, type Portfolio, type PriceMap, type StyleOverrides } from "../data/live";
+
+/** User-set company type for the Analysis tab (per individual stock).
+ *  "neutral" is a deliberate label: counts as classified, average in both scales. */
+export type StockStyle = "growth" | "cyclical" | "defensive" | "neutral";
 import { supabase, supabaseEnabled } from "../lib/supabase";
 import { loadTxns as dbLoadTxns, saveTxns as dbSaveTxns, clearTxns as dbClearTxns } from "../data/txnsRepo";
 import { loadSettings as dbLoadSettings, saveSettings as dbSaveSettings } from "../data/settingsRepo";
@@ -16,7 +20,7 @@ const LOCAL_MODE = !supabaseEnabled;
 
 // ---- persistence helpers (transactions + fetched prices survive reloads) ----
 const LS_TXNS = "pf_txns";
-const LS_PRICES = "pf_prices_v4"; // bump to invalidate caches (v4: fund sector weightings + region hints)
+const LS_PRICES = "pf_prices_v5"; // bump to invalidate caches (v5: EPS estimates + trailing P/E)
 const PRICE_TTL = 6 * 60 * 60 * 1000; // don't auto-refresh prices more than every 6h on reload; the Refresh button forces it, and the server cache throttles Yahoo further
 
 function dedupeTxns(txns: Txn[]): Txn[] {
@@ -125,6 +129,7 @@ function scheduleSettingsSave(get: () => DashState) {
       notes: s.notes,
       bench: s.bench,
       styleOverrides: s.styleOverrides,
+      stockStyles: s.stockStyles,
       calc: {
         ret: s.calcRet,
         monthly: s.calcMonthly,
@@ -216,6 +221,7 @@ interface DashState {
   // dashboard controls
   bench: string;
   styleOverrides: StyleOverrides; // per-instrument active/passive overrides (by ISIN)
+  stockStyles: Record<string, StockStyle>; // per-stock Growth/Cyclical/Defensive label (by ISIN)
   period: TrendPeriod;
   allocMode: AllocDim;
   hoverAlloc: number | null;
@@ -223,8 +229,8 @@ interface DashState {
   hoverPerf: number | null;
 
   // performance chart — which instrument groups to include in the return
-  perfGroups: { stocks: boolean; funds: boolean; cash: boolean };
-  togglePerfGroup: (g: "stocks" | "funds" | "cash") => void;
+  perfGroups: { stocks: boolean; eqFunds: boolean; fiFunds: boolean; other: boolean; cash: boolean };
+  togglePerfGroup: (g: "stocks" | "eqFunds" | "fiFunds" | "other" | "cash") => void;
 
   // ai box (stubbed until the serverless proxy is wired)
   ai: AiState;
@@ -282,6 +288,7 @@ interface DashState {
 
   setBench: (b: string) => void;
   setStyleOverride: (isin: string, v: "active" | "passive" | null) => void;
+  setStockStyle: (isin: string, v: StockStyle | null) => void;
   setPeriod: (p: TrendPeriod) => void;
   setAllocMode: (m: AllocDim) => void;
   setHoverAlloc: (i: number | null) => void;
@@ -323,13 +330,14 @@ const INITIAL_PRICES = loadPrices();
 export const useStore = create<DashState>((set, get) => ({
   bench: "OMXH25",
   styleOverrides: {},
+  stockStyles: {},
   period: "1Y",
   allocMode: "asset",
   hoverAlloc: null,
   allocSelected: null,
   hoverPerf: null,
 
-  perfGroups: { stocks: true, funds: true, cash: true },
+  perfGroups: { stocks: true, eqFunds: true, fiFunds: true, other: true, cash: true },
   togglePerfGroup: (g) => set((s) => ({ perfGroups: { ...s.perfGroups, [g]: !s.perfGroups[g] } })),
 
   ai: { prompt: "", answer: "", loading: false, asked: false },
@@ -410,6 +418,13 @@ export const useStore = create<DashState>((set, get) => ({
     set({ dataLoading: true });
     try {
       const [txns, settings] = await Promise.all([dbLoadTxns(u.id), dbLoadSettings(u.id).catch(() => null)]);
+      // legacy asset-class key: settings saved before the rename used "Alternatives"
+      // where the bucket is now called "Other" (targets + expected returns)
+      const renameAlt = <T,>(o: Record<string, T> | undefined): Record<string, T> | undefined => {
+        if (!o || !("Alternatives" in o) || "Other" in o) return o;
+        const { Alternatives, ...rest } = o;
+        return { ...rest, Other: Alternatives };
+      };
       set((s) => ({
         txns,
         dataLoading: false,
@@ -417,12 +432,13 @@ export const useStore = create<DashState>((set, get) => ({
         portfolio: buildPortfolio(txns, get().prices, settings?.styleOverrides ?? s.styleOverrides),
         // apply saved settings (fall back to existing defaults for any missing field)
         styleOverrides: settings?.styleOverrides ?? s.styleOverrides,
+        stockStyles: settings?.stockStyles ?? s.stockStyles,
         strategyText: settings?.strategy ?? s.strategyText,
-        targets: settings?.targets ?? s.targets,
+        targets: renameAlt(settings?.targets) ?? s.targets,
         watchlist: settings?.watchlist ?? s.watchlist,
         notes: settings?.notes ? normalizeNotes(settings.notes) : s.notes,
         bench: settings?.bench ?? s.bench,
-        calcRet: settings?.calc?.ret ?? s.calcRet,
+        calcRet: renameAlt(settings?.calc?.ret) ?? s.calcRet,
         calcMonthly: settings?.calc?.monthly ?? s.calcMonthly,
         // snap any previously-saved horizon that's no longer an option (was 5/20) to the 30y default
         calcYears: [10, 30, 50].includes(settings?.calc?.years as number) ? (settings!.calc!.years as number) : 30,
@@ -478,9 +494,9 @@ export const useStore = create<DashState>((set, get) => ({
   resTab: "equity",
 
   strategyText: DEFAULT_STRATEGY,
-  targets: { Equities: 70, "Fixed income": 10, Alternatives: 10, "Cash & equivalent": 10, Active: 30, Passive: 70 },
+  targets: { Equities: 70, "Fixed income": 10, Other: 10, "Cash & equivalent": 10, Active: 30, Passive: 70 },
 
-  calcRet: { Equities: 7, "Fixed income": 3, Alternatives: 5, "Cash & equivalent": 2 },
+  calcRet: { Equities: 7, "Fixed income": 3, Other: 5, "Cash & equivalent": 2 },
   calcMonthly: 500,
   calcYears: 30,
   calcTarget: 1000000,
@@ -494,6 +510,14 @@ export const useStore = create<DashState>((set, get) => ({
     if (v === null) delete next[isin];
     else next[isin] = v;
     set({ styleOverrides: next, portfolio: buildPortfolio(get().txns, get().prices, next) });
+    scheduleSettingsSave(get);
+  },
+  setStockStyle: (isin, v) => {
+    if (!isin) return;
+    const next = { ...get().stockStyles };
+    if (v === null) delete next[isin];
+    else next[isin] = v;
+    set({ stockStyles: next }); // analysis composes in the tab — no portfolio rebuild needed
     scheduleSettingsSave(get);
   },
   setPeriod: (p) => set({ period: p }),

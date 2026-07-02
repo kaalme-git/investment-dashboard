@@ -44,7 +44,7 @@ export type HoldingGroup =
   | "Stocks"
   | "EquityFunds"
   | "FixedIncomeFunds"
-  | "AltFunds"
+  | "Other" // anything that fits no other bucket (was "AltFunds")
   | "Cash";
 
 /** One slice of an allocation breakdown (donut + legend + stacked area). */

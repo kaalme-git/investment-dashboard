@@ -189,8 +189,8 @@
 .t10 .dthead,.t10 .dtrow{grid-template-columns:64px 1.15fr 60px .85fr 70px 86px 62px 92px 76px 86px}
 .t10 .dtgroup{display:grid;grid-template-columns:64px 1.15fr 60px .85fr 70px 86px 62px 92px 76px 86px;align-items:center;gap:8px;padding:9px 18px 7px;background:var(--c-bg-subtle);border-bottom:1px solid var(--c-br-subtle)}
 .dgname{grid-column:1 / 7;font:700 11px var(--font-family);text-transform:uppercase;letter-spacing:.05em}
-.dgw{grid-column:7;justify-self:end;font-size:13px;font-weight:600}
-.dgv{grid-column:8;justify-self:end;font-size:13px;font-weight:600}
+.dgw{grid-column:7;justify-self:end;font-size:14px;font-weight:700}
+.dgv{grid-column:8;justify-self:end;font-size:14px;font-weight:700}
 .dsp{overflow:hidden}
 .dsp svg{width:100%;height:24px;display:block}
 
@@ -235,7 +235,8 @@
 
 /* allocation tab */
 .alloctabhd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.satimewrap{margin-top:12px;border:1px solid var(--c-br-subtle);border-radius:8px;overflow:hidden}
+.alloctime{padding:16px 20px;margin-bottom:16px}
+.satimewrap{margin-top:12px;border:1px solid var(--c-br-subtle);border-radius:8px}
 .sacap{font-size:12px;color:var(--c-fg-muted);font-weight:600;letter-spacing:var(--letter-spacing)}
 .saxis{display:flex;justify-content:space-between;font-size:11px;color:var(--c-fg-subtle);font-family:var(--font-family-mono);margin-top:7px}
 
@@ -252,8 +253,8 @@
 .hdname b{font-size:12.5px;font-weight:600}
 .hdsub{font-size:10.5px;color:var(--c-fg-subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hdgroup{background:var(--c-bg-subtle);border-bottom:1px solid var(--c-br-subtle);padding-top:9px;padding-bottom:7px}
-.dgv2{grid-column:7;justify-self:end;font-size:12.5px;font-weight:600}
-.dgw2{grid-column:11;justify-self:end;font-size:12.5px;font-weight:600}
+.dgv2{grid-column:7;justify-self:end;font-size:14px;font-weight:700}
+.dgw2{grid-column:11;justify-self:end;font-size:14px;font-weight:700}
 .srcnote{font-size:11.5px;color:var(--c-fg-subtle);line-height:1.5;margin-top:12px;padding:0 2px}
 
 /* hover info popover (column-header explanations) */
@@ -309,6 +310,36 @@
 .clsovr .periodrow{gap:6px}
 .clsovr .pbtn{font-size:14px;padding:8px 18px;border:1px solid var(--c-br-muted);color:var(--c-fg-muted)}
 .clsovr .pbtn.on{background:var(--c-brand-blue);border-color:var(--c-brand-blue);color:#fff}
+
+/* ---- analysis tab (P/E + growth/cyclical/defensive) ---- */
+.ansub{font-size:11px;color:var(--c-fg-subtle);margin-top:3px}
+.an-growth{color:var(--c-brand-blue)}
+.an-cyclical{color:#d0553a}
+.an-defensive{color:var(--c-fg-success)}
+.an-neutral{color:var(--c-fg-subtle)}
+.kstrip.k5an{grid-template-columns:repeat(5,1fr);margin-bottom:16px}
+.anscale{padding:16px 20px}
+.anscore{font-size:13px;color:var(--c-fg-muted)}
+.anscore b{font-size:15px;color:var(--c-fg-strong)}
+.antrack{position:relative;height:10px;background:var(--c-bg-muted);border-radius:6px;margin-top:16px}
+.anmark{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;background:var(--c-brand-blue);border:2.5px solid #fff;box-shadow:var(--shadow-sm);transform:translate(-50%,-50%)}
+.anends{display:flex;justify-content:space-between;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--c-fg-subtle);font-weight:600;margin-top:8px}
+.anscale .modehint{margin-top:12px}
+.an-note{padding:13px 18px;font-size:13px;color:var(--c-fg-muted);margin-bottom:16px;line-height:1.5}
+.antable{padding:6px 0 4px}
+.anhead,.anrow{display:grid;grid-template-columns:1.5fr 70px 150px 110px 80px;gap:12px;align-items:center;padding:0 18px}
+.anhead{height:34px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--c-fg-subtle);font-weight:600;border-bottom:1px solid var(--c-br-subtle)}
+.anhead .r,.anrow .r{text-align:right;justify-self:end}
+.anhead .c,.anrow .c{text-align:center;justify-self:center}
+.anrow{height:44px;font-size:13px;border-bottom:1px solid var(--c-br-subtle)}
+.anrow:last-child{border-bottom:none}
+.anco{display:flex;flex-direction:column;cursor:pointer;min-width:0}
+.anco b{font-size:13px}
+.anco:hover b{color:var(--c-brand-blue)}
+.anconame{font-size:11.5px;color:var(--c-fg-subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ansel{appearance:none;height:30px;border:1px solid var(--c-br-muted);border-radius:8px;background:#fff;padding:0 10px;font:600 12.5px var(--font-family);cursor:pointer;color:var(--c-fg-subtle);width:130px;text-align:center}
+.ansel:focus{outline:none;border-color:var(--c-brand-blue)}
+.ansel.an-growth,.ansel.an-cyclical,.ansel.an-defensive{border-color:currentColor}
 
 /* company / watchlist / research / report / strategy / calc */
 .phcard{padding:22px}

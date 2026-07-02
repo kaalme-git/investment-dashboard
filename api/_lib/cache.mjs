@@ -44,6 +44,8 @@ function metaToInfo(m, history) {
     targetPrice: m.target_price ?? null,
     recDate: m.rec_date ?? null,
     divEstimates: m.div_estimates ?? null,
+    epsEstimates: m.eps_estimates ?? null,
+    peTrailing: m.pe_trailing ?? null,
     history: history || [],
   };
 }
@@ -61,6 +63,7 @@ function infoToMetaRow(r, nowIso) {
     region_hint: r.regionHint ?? null,
     money_market: !!r.moneyMarket,
     div_yield: r.divYield ?? 0,
+    pe_trailing: r.peTrailing ?? null,
     last_quote: r.price ?? null,
     prev_close: r.prevClose ?? null,
     found: !!r.found,
@@ -149,7 +152,7 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
           const base = r?.rec
             ? { isin, rec: r.rec, target_price: r.targetPrice, rec_date: r.recDate }
             : { isin };
-          return { ...base, div_estimates: r?.divEstimates ?? null, rec_updated_at: stamp };
+          return { ...base, div_estimates: r?.divEstimates ?? null, eps_estimates: r?.epsEstimates ?? null, rec_updated_at: stamp };
         });
         await db.from("instrument_meta").upsert(rows, { onConflict: "isin" });
         for (const isin of uniq) {
@@ -164,23 +167,26 @@ export async function resolvePrices(isins, start = "2021-06-01", force = false) 
   // changed via a corporate action (old & new ISIN share the same symbol, e.g.
   // Talenom). If a requested instrument is missing rec or dividend estimates,
   // borrow them from any instrument_meta row with the same symbol.
-  const needFb = uniq.filter((i) => metaBy[i] && metaBy[i].symbol && (!metaBy[i].rec || !metaBy[i].div_estimates));
+  const needFb = uniq.filter((i) => metaBy[i] && metaBy[i].symbol && (!metaBy[i].rec || !metaBy[i].div_estimates || !metaBy[i].eps_estimates));
   const wantSyms = [...new Set(needFb.map((i) => metaBy[i].symbol))];
   if (wantSyms.length) {
     const { data: recRows } = await db
       .from("instrument_meta")
-      .select("symbol,rec,target_price,rec_date,div_estimates")
+      .select("symbol,rec,target_price,rec_date,div_estimates,eps_estimates")
       .in("symbol", wantSyms);
     const bySymRec = {};
     const bySymDiv = {};
+    const bySymEps = {};
     for (const r of recRows || []) {
       if (r.rec && !bySymRec[r.symbol]) bySymRec[r.symbol] = r;
       if (r.div_estimates && !bySymDiv[r.symbol]) bySymDiv[r.symbol] = r;
+      if (r.eps_estimates && !bySymEps[r.symbol]) bySymEps[r.symbol] = r;
     }
     for (const i of needFb) {
       const m = metaBy[i];
       if (!m.rec && bySymRec[m.symbol]) { const r = bySymRec[m.symbol]; m.rec = r.rec; m.target_price = r.target_price; m.rec_date = r.rec_date; }
       if (!m.div_estimates && bySymDiv[m.symbol]) m.div_estimates = bySymDiv[m.symbol].div_estimates;
+      if (!m.eps_estimates && bySymEps[m.symbol]) m.eps_estimates = bySymEps[m.symbol].eps_estimates;
     }
   }
 

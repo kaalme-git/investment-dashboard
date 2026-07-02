@@ -73,6 +73,20 @@ export interface CompanyMetrics {
   styleOverridden: boolean; // whether the user has manually set active/passive
 }
 
+/** One individual stock in the Analysis tab (P/E + type + weight). */
+export interface AnalysisStock {
+  isin: string;
+  ticker: string;
+  name: string;
+  value: number;
+  valueStr: string;
+  weightPct: number; // share of the individual-stock portfolio (0..100)
+  weightStr: string;
+  pe: number | null; // Inderes current-year est. ÷ price, else Yahoo trailing; null if unavailable
+  peStr: string;
+  peSrc: string; // "Inderes est." | "Yahoo trailing" | "loss-making" | "—"
+}
+
 /** One instrument's contribution to an allocation bucket (drill-down detail). */
 export interface AllocContribution {
   ticker: string;
@@ -85,7 +99,9 @@ export interface AllocContribution {
 
 export interface PerfGroups {
   stocks: boolean;
-  funds: boolean;
+  eqFunds: boolean;
+  fiFunds: boolean;
+  other: boolean;
   cash: boolean;
 }
 

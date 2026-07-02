@@ -6,6 +6,7 @@ import AllocationTab from "./screens/dashboard/AllocationTab";
 import PerformanceTab from "./screens/dashboard/PerformanceTab";
 import HoldingsTab from "./screens/dashboard/HoldingsTab";
 import DividendsTab from "./screens/dashboard/DividendsTab";
+import AnalysisTab from "./screens/dashboard/AnalysisTab";
 import TransactionsScreen from "./screens/TransactionsScreen";
 import CompanyScreen from "./screens/CompanyScreen";
 import ReportScreen from "./screens/ReportScreen";
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
           { path: "performance", element: <PerformanceTab /> },
           { path: "holdings", element: <HoldingsTab /> },
           { path: "dividends", element: <DividendsTab /> },
+          { path: "analysis", element: <AnalysisTab /> },
         ],
       },
       { path: "transactions", element: <TransactionsScreen /> },

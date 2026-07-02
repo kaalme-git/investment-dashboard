@@ -58,6 +58,8 @@ create table if not exists public.instrument_meta (
   rec_date         date,                  -- date of the analyst recommendation
   rec_updated_at   timestamptz,           -- when we last refreshed rec from Inderes (daily TTL)
   div_estimates    jsonb,                 -- analyst dividend/share estimates { year: dps } for T, T+1, T+2 (EUR)
+  eps_estimates    jsonb,                 -- analyst EPS estimates { year: eps } for T, T+1, T+2 (EUR) → P/E
+  pe_trailing      double precision,      -- Yahoo trailing P/E (stocks; fallback P/E source)
   sector_weights   jsonb,                 -- equity-fund sector look-through { displaySector: weight 0..1 }
   region_hint      text                   -- dominant country of a fund's top holdings (region fallback)
 );
@@ -67,6 +69,8 @@ alter table public.instrument_meta add column if not exists target_price double 
 alter table public.instrument_meta add column if not exists rec_date date;
 alter table public.instrument_meta add column if not exists rec_updated_at timestamptz;
 alter table public.instrument_meta add column if not exists div_estimates jsonb;
+alter table public.instrument_meta add column if not exists eps_estimates jsonb;
+alter table public.instrument_meta add column if not exists pe_trailing double precision;
 alter table public.instrument_meta add column if not exists sector_weights jsonb;
 alter table public.instrument_meta add column if not exists region_hint text;
 alter table public.instrument_meta enable row level security;
@@ -97,12 +101,14 @@ create table if not exists public.user_settings (
   bench      text,   -- Overview benchmark selection
   calc       jsonb,  -- Calculations inputs (returns, monthly, years, target, allocMode)
   style_overrides jsonb, -- per-instrument active/passive overrides { isin: 'active'|'passive' }
+  stock_styles jsonb, -- per-stock company type { isin: 'growth'|'cyclical'|'defensive' }
   updated_at timestamptz default now()
 );
 -- If the table already exists from an earlier run:
 alter table public.user_settings add column if not exists bench text;
 alter table public.user_settings add column if not exists calc jsonb;
 alter table public.user_settings add column if not exists style_overrides jsonb;
+alter table public.user_settings add column if not exists stock_styles jsonb;
 alter table public.user_settings enable row level security;
 drop policy if exists "own settings" on public.user_settings;
 create policy "own settings" on public.user_settings

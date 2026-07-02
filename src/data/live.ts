@@ -19,7 +19,7 @@ import type {
   TableGroup,
   TableRow,
 } from "./types";
-import type { Kpi, HoldRow, HoldGroup, CompanyMetrics, Performance, PerfGroups, TrendPeriod, AllocContribution } from "./portfolio";
+import type { Kpi, HoldRow, HoldGroup, CompanyMetrics, Performance, PerfGroups, TrendPeriod, AllocContribution, AnalysisStock } from "./portfolio";
 
 export const ACCENT = "#0000e6";
 const GREY = "#d9d9d9";
@@ -64,6 +64,8 @@ export interface PriceInfo {
   targetPrice?: number | null;
   recDate?: string | null;
   divEstimates?: Record<string, number> | null; // analyst DPS estimates { year: dps } for T, T+1, T+2 (EUR)
+  epsEstimates?: Record<string, number> | null; // analyst EPS estimates { year: eps } for T, T+1, T+2 (EUR)
+  peTrailing?: number | null; // Yahoo trailing P/E (stocks; fallback source)
 }
 
 export interface DividendBar {
@@ -148,46 +150,65 @@ function asOf(hist: { d: number; v: number }[], t: number, fallback: number): nu
   return v;
 }
 
-type Sleeve = "stocks" | "funds" | "cash";
+// The five portfolio buckets. Non-cash sleeves drive the performance engine;
+// "other" catches anything that fits no other bucket (bonds held directly,
+// commodities, crypto, unknown types…).
+const PERF_SLEEVES = ["stocks", "eqFunds", "fiFunds", "other"] as const;
+type PerfSleeve = (typeof PERF_SLEEVES)[number];
+type Sleeve = PerfSleeve | "cash";
 
 // ---- generic classification ----
 interface Cls {
   sleeve: Sleeve;
   group: HoldingGroup;
-  kind: string; // Stock | ETF | Index fund | Bond fund | Cash eq.
+  kind: string; // Stock | ETF | Index fund | Active fund | Bond fund | Other | Cash eq.
   typeAP: "active" | "passive";
   sectorLabel: string; // for allocation (funds → asset-class label)
-  assetLabel: "Equities" | "Fixed income" | "Alternatives" | "Cash & equivalent";
+  assetLabel: "Equities" | "Fixed income" | "Other" | "Cash & equivalent";
 }
 // a non-ETF fund whose name references an index → passive index fund; else active
 const INDEX_NAME_RE = /index|indeksi|\bomx|\bmsci\b|s&p|stoxx|ftse|\bdax\b|mdax|russell|nasdaq|nikkei|\bcac\b|\bdow\b|tracker/i;
+const FUND_TYPES = ["ETF", "MUTUALFUND"];
+// clearly non-equity exchange-traded products by NAME: commodity ETCs (physical
+// gold/silver…), leveraged certificates & warrants (incl. Nordnet's "T SHRT"/"T LONG"),
+// crypto trackers. Tested BEFORE the fund branch (so a gold ETC that Yahoo types as
+// "ETF" still lands in Other) but AFTER the EQUITY branch (a resolved stock named
+// "Gold Fields" stays a stock). Not foolproof — heuristics never are.
+const OTHER_NAME_RE = /\bphysical\b|\bgold\b|\bsilver\b|platinum|palladium|commodit|\betc\b|\betn\b|\betp\b|bitcoin|ethereum|crypto|\bbull\b|\bbear\b|turbo|warrant|mini.?future|certifi|\bshrt\b|\bt ?long\b|leverag|\b\dx\b/i;
 
 function classify(name: string, info?: PriceInfo): Cls {
   const t = info?.type;
   const mm = info?.moneyMarket || MM_NAME_RE.test(name);
   const looksFund = isFund(t) || (!t && FUND_NAME_RE.test(name));
 
-  // individual stocks are always active
-  if (t === "EQUITY" || (!t && !looksFund && !mm)) {
+  // individual stocks are always active (unresolved non-fund-looking names default
+  // here too — the largest bucket is the least-bad guess for an unknown instrument)
+  if (t === "EQUITY" || (!t && !looksFund && !mm && !OTHER_NAME_RE.test(name))) {
     return { sleeve: "stocks", group: "Stocks", kind: "Stock", typeAP: "active", sectorLabel: normSector(info?.sector), assetLabel: "Equities" };
   }
   // cash & equivalents are their own style bucket (neither active nor passive);
   // typeAP is unused for cash since it's excluded from the active/passive split.
+  // The test is description/name-based, so it applies even to unresolved instruments.
   if (mm) {
     return { sleeve: "cash", group: "Cash", kind: "Cash eq.", typeAP: "passive", sectorLabel: "Cash equivalent", assetLabel: "Cash & equivalent" };
   }
-  // fixed-income funds (that aren't cash equivalents) are treated as active
+  // Other: commodity/certificate/crypto products by name, or a known type that is
+  // neither a stock nor a fund (bond, commodity, crypto, …)
+  if (OTHER_NAME_RE.test(name) || (t && !FUND_TYPES.includes(t))) {
+    return { sleeve: "other", group: "Other", kind: "Other", typeAP: "active", sectorLabel: "Other", assetLabel: "Other" };
+  }
+  // fixed-income funds that aren't cash equivalents → Fixed income (active)
   const ac = info?.assetClass || (FI_NAME_RE.test(name) ? "Fixed Income" : "Equity");
   if (ac === "Fixed Income") {
-    return { sleeve: "funds", group: "FixedIncomeFunds", kind: "Bond fund", typeAP: "active", sectorLabel: "Fixed income fund", assetLabel: "Fixed income" };
+    return { sleeve: "fiFunds", group: "FixedIncomeFunds", kind: "Bond fund", typeAP: "active", sectorLabel: "Fixed income fund", assetLabel: "Fixed income" };
   }
   // equity fund → ETF / Index (passive) or actively-managed (active)
   if (t === "ETF") {
-    return { sleeve: "funds", group: "EquityFunds", kind: "ETF", typeAP: "passive", sectorLabel: "Equity fund", assetLabel: "Equities" };
+    return { sleeve: "eqFunds", group: "EquityFunds", kind: "ETF", typeAP: "passive", sectorLabel: "Equity fund", assetLabel: "Equities" };
   }
   const isIndex = INDEX_NAME_RE.test(name);
   return {
-    sleeve: "funds", group: "EquityFunds",
+    sleeve: "eqFunds", group: "EquityFunds",
     kind: isIndex ? "Index fund" : "Active fund",
     typeAP: isIndex ? "passive" : "active",
     sectorLabel: "Equity fund", assetLabel: "Equities",
@@ -250,6 +271,8 @@ interface Sec {
   totalPct: number;
   divYield: number; // trailing 12-month dividend yield (Yahoo)
   fwdYield: number; // forward yield: next-year analyst DPS / price, else trailing
+  pe: number | null; // stocks: price / Inderes current-year EPS est., else Yahoo trailing; null if loss-making/unknown
+  peSrc: string; // "Inderes est." | "Yahoo trailing" | "loss-making" | "—"
   seed: number;
   cls: Cls;
   region: string;
@@ -297,6 +320,8 @@ export interface Portfolio {
   isHeld: (ticker: string) => boolean;
   companyMetrics: (ticker: string) => CompanyMetrics | null;
   getPerformance: (benchKey: string, period: TrendPeriod, groups: PerfGroups) => Performance;
+  perfAvailable: PerfGroups; // which buckets have (ever had) assets — empty ones are hidden in the UI
+  analysisStocks: AnalysisStock[]; // individual stocks with P/E, for the Analysis tab
   dividends: DividendBar[];
   hasPrices: boolean;
 }
@@ -386,6 +411,16 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
       const nextDps = info?.divEstimates?.[NEXT_YEAR];
       const ownTrailYield = last > 0 && trailingDpsByIsin[p.isin] ? (trailingDpsByIsin[p.isin] / last) * 100 : 0;
       const fwdYield = nextDps != null && last > 0 ? (nextDps / last) * 100 : info?.divYield || ownTrailYield;
+      // P/E for individual stocks: price ÷ Inderes current-year EPS estimate;
+      // loss-making (EPS ≤ 0) has no meaningful P/E; fallback = Yahoo trailing P/E.
+      const curEps = info?.epsEstimates?.[NEXT_YEAR - 1];
+      let pe: number | null = null, peSrc = "—";
+      if (cls.group === "Stocks") {
+        if (curEps != null && last > 0) {
+          if (curEps > 0) { pe = +(last / curEps).toFixed(1); peSrc = "Inderes est."; }
+          else peSrc = "loss-making";
+        } else if (info?.peTrailing) { pe = +info.peTrailing.toFixed(1); peSrc = "Yahoo trailing"; }
+      }
       return {
         isin: p.isin,
         name: p.name,
@@ -398,10 +433,12 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
         totalPct: cost > 0 ? ((value + divRecv - cost) / cost) * 100 : 0,
         divYield: info?.divYield || 0,
         fwdYield,
+        pe,
+        peSrc,
         seed: hashInt(p.isin),
         cls,
-        // stocks → company country; funds → mandate region (name) / holdings hint; cash → own bucket
-        region: cls.sleeve === "stocks" ? normRegion(info?.country) : cls.sleeve === "funds" ? fundRegion(p.name, info?.regionHint) : "Cash",
+        // stocks → company country; cash → own bucket; funds & other → mandate region (name) / holdings hint
+        region: cls.sleeve === "stocks" ? normRegion(info?.country) : cls.sleeve === "cash" ? "Cash" : fundRegion(p.name, info?.regionHint),
         sectorWeights: cls.group === "EquityFunds" ? info?.sectorWeights ?? null : null,
         recShort: rd.recShort,
         recCls: rd.recCls,
@@ -513,7 +550,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     h.cls.group === "Stocks" ? "Stocks"
       : h.cls.group === "EquityFunds" ? "Equity funds"
         : h.cls.group === "FixedIncomeFunds" ? "Fixed income"
-          : h.cls.group === "AltFunds" ? "Alternatives"
+          : h.cls.group === "Other" ? "Other"
             : "Cash & equivalents";
   const assetAgg = aggregate((h) => [{ label: assetViewLabel(h), value: h.value }], "Cash & equivalents");
   // STYLE — active / passive / cash & equivalents (cash is its own bucket).
@@ -535,7 +572,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     sector: sectorAgg.detail, region: regionAgg.detail, asset: assetAgg.detail, style: styleAgg.detail,
   };
 
-  // assetCurrent stays on the BROAD classes (Equities / Fixed income / Alternatives /
+  // assetCurrent stays on the BROAD classes (Equities / Fixed income / Other /
   // Cash & equivalent) the Calculations projection + Strategy targets rely on.
   const assetCurrent: Record<string, number> = {};
   aggregate((h) => [{ label: h.cls.assetLabel, value: h.value }], "Cash & equivalent").segs.forEach((e) => (assetCurrent[e.label] = e.pct));
@@ -544,8 +581,8 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   const grpMeta: { key: HoldingGroup; label: string }[] = [
     { key: "Stocks", label: "Stocks" },
     { key: "EquityFunds", label: "Equity funds" },
-    { key: "FixedIncomeFunds", label: "Fixed income funds" },
-    { key: "AltFunds", label: "Alternative funds" },
+    { key: "FixedIncomeFunds", label: "Fixed income" },
+    { key: "Other", label: "Other assets" },
     { key: "Cash", label: "Cash & cash equivalents" },
   ];
   const tagOf: Record<string, [string, string]> = {
@@ -554,6 +591,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     "Index fund": ["Index", "pas"],
     "Active fund": ["Active", "act"],
     "Bond fund": ["Bond", "act"],
+    Other: ["Other", "act"],
     "Cash eq.": ["Cash eq", "csh"],
   };
 
@@ -627,6 +665,22 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     })
     .filter((g) => g.rows.length);
 
+  // ---- Analysis tab: individual stocks with P/E (weights vs the stock sleeve) ----
+  const anStocks = secs.filter((h) => h.cls.group === "Stocks");
+  const anTotal = anStocks.reduce((s, h) => s + h.value, 0) || 1;
+  const analysisStocks: AnalysisStock[] = anStocks.map((h) => ({
+    isin: h.isin,
+    ticker: h.ticker,
+    name: h.name,
+    value: h.value,
+    valueStr: eur(h.value),
+    weightPct: (h.value / anTotal) * 100,
+    weightStr: ((h.value / anTotal) * 100).toFixed(1) + "%",
+    pe: h.pe,
+    peStr: h.pe != null ? h.pe.toFixed(1) : h.peSrc === "loss-making" ? "neg." : "—",
+    peSrc: h.peSrc,
+  }));
+
   // ---- per-ticker lookup ----
   const byTicker: Record<string, Sec> = {};
   secs.forEach((h) => (byTicker[h.ticker] = h));
@@ -637,17 +691,18 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     // which allocation buckets it lands in, + the raw variables behind them
     const info = priceOf(h.isin);
     const g = h.cls.group;
-    const bucketAsset = g === "Stocks" ? "Stocks" : g === "EquityFunds" ? "Equity funds" : g === "FixedIncomeFunds" ? "Fixed income" : g === "AltFunds" ? "Alternatives" : "Cash & equivalents";
+    const bucketAsset = g === "Stocks" ? "Stocks" : g === "EquityFunds" ? "Equity funds" : g === "FixedIncomeFunds" ? "Fixed income" : g === "Other" ? "Other" : "Cash & equivalents";
     const bucketStyle = g === "Cash" ? "Cash & equivalents" : h.cls.typeAP === "active" ? "Active" : "Passive";
-    const bucketSector = g === "Stocks" ? h.cls.sectorLabel : g === "EquityFunds" ? (h.sectorWeights ? "Look-through" : "Equity fund") : g === "FixedIncomeFunds" ? "Fixed income" : "Cash";
+    const bucketSector = g === "Stocks" ? h.cls.sectorLabel : g === "EquityFunds" ? (h.sectorWeights ? "Look-through" : "Equity fund") : g === "FixedIncomeFunds" ? "Fixed income" : g === "Other" ? "Other" : "Cash";
     const swTot = h.sectorWeights ? Object.values(h.sectorWeights).reduce((s, w) => s + w, 0) : 0;
     const fundSectors = g === "EquityFunds" && h.sectorWeights && swTot > 0
       ? Object.entries(h.sectorWeights).map(([label, w]) => ({ label, pctStr: ((w / swTot) * 100).toFixed(0) + "%", n: w })).sort((a, b) => b.n - a.n).map(({ label, pctStr }) => ({ label, pctStr }))
       : null;
     const regionBasis = h.cls.sleeve === "stocks" ? "Company country (Yahoo)"
-      : h.cls.sleeve === "funds" ? (REGION_PATTERNS.some(([re]) => re.test(h.name)) ? "Fund mandate (name)" : info?.regionHint ? "Top holdings" : "Default (Global)")
-        : "—";
+      : h.cls.sleeve === "cash" ? "—"
+        : REGION_PATTERNS.some(([re]) => re.test(h.name)) ? "Fund mandate (name)" : info?.regionHint ? "Top holdings" : "Default (Global)";
     const clsVars = [
+      { k: "Yahoo lookup", v: !info ? "No data yet" : info.found ? "Resolved" : "Not found (classified by name)" },
       { k: "Yahoo type", v: info?.type || "—" },
       { k: "Kind", v: h.cls.kind },
       { k: "Asset class", v: info?.assetClass || (h.cls.sleeve === "stocks" ? "Equity (stock)" : "—") },
@@ -684,6 +739,14 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   // TWR reconstruction over a weekly grid (true historical account incl. sold)
   // ==========================================================================
   const perf = buildTWR(asc, prices, fallbackPx, keyOf);
+  // which buckets have ever held anything — the chart toggles hide the rest
+  const perfAvailable: PerfGroups = {
+    stocks: perf.values.stocks.some((v) => v > 0.5),
+    eqFunds: perf.values.eqFunds.some((v) => v > 0.5),
+    fiFunds: perf.values.fiFunds.some((v) => v > 0.5),
+    other: perf.values.other.some((v) => v > 0.5),
+    cash: perf.cashValue.some((v) => v > 0.5),
+  };
   const { dates: allocDates, series: allocSeries } = buildAllocSeries(asc, prices, fallbackPx, keyOf, styleOverrides);
 
   function getPerformance(benchKey: string, period: TrendPeriod, groups: PerfGroups): Performance {
@@ -729,7 +792,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   return {
     kpis, allocMap, allocModeLbl, allocDetail, tableGroups, holdingsGroups, assetCurrent,
     activePctNum: activePct, passivePctNum: passivePct, cashPctNum: cashPct, totalValue: TOTAL,
-    benchDefs, isHeld, companyMetrics, getPerformance, dividends, hasPrices,
+    benchDefs, isHeld, companyMetrics, getPerformance, perfAvailable, analysisStocks, dividends, hasPrices,
     allocSeries, allocDates,
   };
 }
@@ -761,7 +824,7 @@ function buildAllocSeries(
     const cls = classify(nameOf[k] || k, info);
     const ov = styleOverrides[t.isin];
     if (ov && cls.sleeve !== "cash") cls.typeAP = ov;
-    const region = cls.sleeve === "stocks" ? normRegion(info?.country) : cls.sleeve === "funds" ? fundRegion(nameOf[k] || k, info?.regionHint) : "Cash";
+    const region = cls.sleeve === "stocks" ? normRegion(info?.country) : cls.sleeve === "cash" ? "Cash" : fundRegion(nameOf[k] || k, info?.regionHint);
     uni.set(k, { cls, region, sw: cls.group === "EquityFunds" ? info?.sectorWeights ?? null : null, hist: sortedHist(info), fb: fallbackPx[t.isin || k] || t.price || 0 });
   });
 
@@ -801,7 +864,7 @@ function buildAllocSeries(
         else add("sector", "Equity fund (unclassified)", gi, v);
       } else add("sector", u.cls.sectorLabel, gi, v); // stocks
       add("region", u.region, gi, v);
-      add("asset", u.cls.group === "Stocks" ? "Stocks" : u.cls.group === "EquityFunds" ? "Equity funds" : u.cls.group === "FixedIncomeFunds" ? "Fixed income" : "Cash & equivalents", gi, v);
+      add("asset", u.cls.group === "Stocks" ? "Stocks" : u.cls.group === "EquityFunds" ? "Equity funds" : u.cls.group === "FixedIncomeFunds" ? "Fixed income" : "Other", gi, v);
       add("style", u.cls.typeAP === "passive" ? "Passive" : "Active", gi, v);
     }
     if (cashVal > 0) {
@@ -829,26 +892,28 @@ function buildAllocSeries(
 // (deposits, withdrawals, securities transfers) are cash flows (CF); buys, sells and
 // DIVIDENDS are internal — a dividend's ex-div price drop and the received cash both sit
 // inside OC, so it nets out automatically (no dividend credit needed, no double-count).
-// We keep per-sleeve values + per-sleeve flows so the stocks/funds/cash toggle can compute
-// the same identity on any subset (movements crossing the subset boundary become its CF).
+// We keep per-sleeve values + per-sleeve flows so the bucket toggles (stocks / equity
+// funds / fixed income / other / cash) can compute the same identity on any subset
+// (movements crossing the subset boundary become its CF).
+type SleeveSeries = Record<PerfSleeve, number[]>;
+const mkSeries = (): SleeveSeries => ({ stocks: [], eqFunds: [], fiFunds: [], other: [] });
 interface TWR {
   dates: string[]; // YYYY-MM-DD weekly grid
-  stocksValue: number[];
-  fundsValue: number[];
+  values: SleeveSeries; // market value per non-cash sleeve
   cashValue: number[]; // real cash balance + money-market funds
   extCash: number[]; // deposits + withdrawals (signed net), into the cash sleeve
   extCashIn: number[]; // deposits only (positive inflow part) → CFI
-  buyS: number[]; buyF: number[]; // cash → sleeve (buy cost)
-  sellS: number[]; sellF: number[]; // sleeve → cash (sell proceeds)
-  divS: number[]; divF: number[]; // sleeve → cash (dividends)
-  xInS: number[]; xInF: number[]; // securities transferred IN (market value, external)
-  xOutS: number[]; xOutF: number[]; // securities transferred OUT
+  buy: SleeveSeries; // cash → sleeve (buy cost)
+  sell: SleeveSeries; // sleeve → cash (sell proceeds)
+  div: SleeveSeries; // sleeve → cash (dividends)
+  xIn: SleeveSeries; // securities transferred IN (market value, external)
+  xOut: SleeveSeries; // securities transferred OUT
   bench: Record<string, number[]>; // per UI key, index level aligned to grid
 }
 
 function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, number>, keyOf: (t: Txn) => string): TWR {
   const dated = asc.filter((t) => t.date);
-  const empty: TWR = { dates: [], stocksValue: [], fundsValue: [], cashValue: [], extCash: [], extCashIn: [], buyS: [], buyF: [], sellS: [], sellF: [], divS: [], divF: [], xInS: [], xInF: [], xOutS: [], xOutF: [], bench: {} };
+  const empty: TWR = { dates: [], values: mkSeries(), cashValue: [], extCash: [], extCashIn: [], buy: mkSeries(), sell: mkSeries(), div: mkSeries(), xIn: mkSeries(), xOut: mkSeries(), bench: {} };
   if (!dated.length) return empty;
 
   const WEEK = 7 * 864e5;
@@ -881,10 +946,11 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
   const held: Record<string, number> = {};
   const priceAt = (u: { hist: { d: number; v: number }[]; fb: number }, t: number) => asOf(u.hist, t, u.fb);
 
-  const stocksValue: number[] = [], fundsValue: number[] = [], cashValue: number[] = [];
+  const values = mkSeries();
+  const cashValue: number[] = [];
   const extCash: number[] = [], extCashIn: number[] = [];
-  const buyS: number[] = [], buyF: number[] = [], sellS: number[] = [], sellF: number[] = [];
-  const divS: number[] = [], divF: number[] = [], xInS: number[] = [], xInF: number[] = [], xOutS: number[] = [], xOutF: number[] = [];
+  const buy = mkSeries(), sell = mkSeries(), div = mkSeries(), xIn = mkSeries(), xOut = mkSeries();
+  const zeros = (): Record<PerfSleeve, number> => ({ stocks: 0, eqFunds: 0, fiFunds: 0, other: 0 });
 
   let ti = 0;
   let cashBal = 0;
@@ -893,7 +959,8 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
     const gd = grid[gi];
     // per-week flow buckets, classified by sleeve; external (deposit/withdrawal/transfer)
     // vs internal (buy/sell/dividend) — the split is what makes the OC identity hold.
-    let eC = 0, eCI = 0, bS = 0, bF = 0, sS = 0, sF = 0, dS = 0, dF = 0, xiS = 0, xiF = 0, xoS = 0, xoF = 0;
+    let eC = 0, eCI = 0;
+    const wBuy = zeros(), wSell = zeros(), wDiv = zeros(), wXIn = zeros(), wXOut = zeros();
     while (ti < dated.length && +new Date(dated[ti].date) <= gd) {
       const t = dated[ti];
       cashBal += t.amount || 0;
@@ -901,32 +968,35 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
       const k = keyOf(t);
       const u = k ? universe.get(k) : undefined;
       if (sign !== 0 && k) held[k] = (held[k] || 0) + sign * t.qty;
-      const sl = u?.sleeve; // "stocks" | "funds" | "cash" | undefined
+      const sl = u && u.sleeve !== "cash" ? (u.sleeve as PerfSleeve) : null; // non-cash sleeve, else null
       const c = t.category;
       if (c === "deposit") { eC += t.amount || 0; eCI += Math.max(0, t.amount || 0); }
       else if (c === "withdrawal") { eC += t.amount || 0; } // amount is negative
-      else if (c === "buy" && (sl === "stocks" || sl === "funds")) { const cost = t.acqValue > 0 ? t.acqValue : t.qty * t.price + t.fee; if (sl === "stocks") bS += cost; else bF += cost; }
-      else if (c === "sell" && (sl === "stocks" || sl === "funds")) { const pr = t.qty * t.price - t.fee; if (sl === "stocks") sS += pr; else sF += pr; }
-      else if (c === "dividend" && (sl === "stocks" || sl === "funds")) { if (sl === "stocks") dS += t.amount || 0; else dF += t.amount || 0; }
-      else if (c === "transfer_in" && (sl === "stocks" || sl === "funds") && u) { const mv = t.qty * priceAt(u, +new Date(t.date)); if (sl === "stocks") xiS += mv; else xiF += mv; }
-      else if (c === "transfer_out" && (sl === "stocks" || sl === "funds") && u) { const mv = t.qty * priceAt(u, +new Date(t.date)); if (sl === "stocks") xoS += mv; else xoF += mv; }
+      else if (c === "buy" && sl) { wBuy[sl] += t.acqValue > 0 ? t.acqValue : t.qty * t.price + t.fee; }
+      else if (c === "sell" && sl) { wSell[sl] += t.qty * t.price - t.fee; }
+      else if (c === "dividend" && sl) { wDiv[sl] += t.amount || 0; }
+      else if (c === "transfer_in" && sl && u) { wXIn[sl] += t.qty * priceAt(u, +new Date(t.date)); }
+      else if (c === "transfer_out" && sl && u) { wXOut[sl] += t.qty * priceAt(u, +new Date(t.date)); }
       // fee / tax / interest / other: internal, already reflected in cashBal (net-of-cost return)
       ti++;
     }
     // sleeve market values at this grid point
-    let vs = 0, vf = 0, vc = 0;
+    const wVal = zeros();
+    let vc = 0;
     for (const [k, u] of universe) {
       const q = held[k];
       if (!q) continue;
       const val = q * priceAt(u, gd);
-      if (u.sleeve === "stocks") vs += val;
-      else if (u.sleeve === "funds") vf += val;
-      else vc += val; // money-market funds count as cash
+      if (u.sleeve === "cash") vc += val; // money-market funds count as cash
+      else wVal[u.sleeve as PerfSleeve] += val;
     }
-    stocksValue.push(vs); fundsValue.push(vf); cashValue.push(Math.max(0, cashBal) + vc);
+    for (const s of PERF_SLEEVES) {
+      values[s].push(wVal[s]);
+      buy[s].push(wBuy[s]); sell[s].push(wSell[s]); div[s].push(wDiv[s]);
+      xIn[s].push(wXIn[s]); xOut[s].push(wXOut[s]);
+    }
+    cashValue.push(Math.max(0, cashBal) + vc);
     extCash.push(eC); extCashIn.push(eCI);
-    buyS.push(bS); buyF.push(bF); sellS.push(sS); sellF.push(sF); divS.push(dS); divF.push(dF);
-    xInS.push(xiS); xInF.push(xiF); xOutS.push(xoS); xOutF.push(xoF);
   }
 
   // benchmarks aligned to grid
@@ -939,7 +1009,7 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
   }
 
   const dates = grid.map((ms) => new Date(ms).toISOString().slice(0, 10));
-  return { dates, stocksValue, fundsValue, cashValue, extCash, extCashIn, buyS, buyF, sellS, sellF, divS, divF, xInS, xInF, xOutS, xOutF, bench };
+  return { dates, values, cashValue, extCash, extCashIn, buy, sell, div, xIn, xOut, bench };
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -967,8 +1037,9 @@ function computePerformance(twr: TWR, benchKey: string, period: TrendPeriod, gro
   } else start = Math.max(0, PN - 1 - (WEEKS[period] ?? 52));
 
   // Own Capital of the selected subset = market value of its sleeves (+ cash if selected).
-  const selS = groups.stocks, selF = groups.funds, selC = groups.cash;
-  const OC = (t: number) => (selS ? twr.stocksValue[t] : 0) + (selF ? twr.fundsValue[t] : 0) + (selC ? twr.cashValue[t] : 0);
+  const sel: Record<PerfSleeve, boolean> = { stocks: groups.stocks, eqFunds: groups.eqFunds, fiFunds: groups.fiFunds, other: groups.other };
+  const selC = groups.cash;
+  const OC = (t: number) => PERF_SLEEVES.reduce((s, k) => s + (sel[k] ? twr.values[k][t] : 0), 0) + (selC ? twr.cashValue[t] : 0);
 
   // A movement is a cash flow (CF) for the subset only when it CROSSES the subset boundary.
   // With the whole account selected, buys/sells/dividends are internal (net to 0) and only
@@ -978,14 +1049,14 @@ function computePerformance(twr: TWR, benchKey: string, period: TrendPeriod, gro
     const prev = OC(t - 1), cur = OC(t);
     let CF = 0, CFI = 0; // net flow, and inflow-only part (for the denominator)
     if (selC) { CF += twr.extCash[t]; CFI += twr.extCashIn[t]; } // deposits/withdrawals hit cash
-    const sleeve = (sel: boolean, buy: number, sell: number, div: number, xIn: number, xOut: number) => {
-      if (sel) { CF += xIn - xOut; CFI += xIn; } // transfers are external to the account
-      if (sel && !selC) { CF += buy - sell - div; CFI += buy; } // cash is outside: buy in, sell/div out
-      else if (!sel && selC) { CF += sell + div - buy; CFI += sell + div; } // sleeve outside: sell/div in
-      // sel && selC → fully internal (no CF); !sel && !selC → does not touch the subset
-    };
-    sleeve(selS, twr.buyS[t], twr.sellS[t], twr.divS[t], twr.xInS[t], twr.xOutS[t]);
-    sleeve(selF, twr.buyF[t], twr.sellF[t], twr.divF[t], twr.xInF[t], twr.xOutF[t]);
+    for (const k of PERF_SLEEVES) {
+      const on = sel[k];
+      const buy = twr.buy[k][t], sell = twr.sell[k][t], div = twr.div[k][t];
+      if (on) { CF += twr.xIn[k][t] - twr.xOut[k][t]; CFI += twr.xIn[k][t]; } // transfers are external to the account
+      if (on && !selC) { CF += buy - sell - div; CFI += buy; } // cash is outside: buy in, sell/div out
+      else if (!on && selC) { CF += sell + div - buy; CFI += sell + div; } // sleeve outside: sell/div in
+      // on && selC → fully internal (no CF); !on && !selC → does not touch the subset
+    }
     const denom = Math.abs(prev + CFI);
     const ret = denom > 1e-6 ? (cur - prev - CF) / denom : 0;
     a.push(a[a.length - 1] * (1 + ret));

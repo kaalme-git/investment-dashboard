@@ -2,7 +2,7 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import IconChevronDown from "../../icons/chevronDown";
 import { useStore } from "../../store/useStore";
 
-const TABS = ["Overview", "Allocation", "Performance", "Holdings", "Dividends"];
+const TABS = ["Overview", "Allocation", "Performance", "Holdings", "Dividends", "Analysis"];
 
 export default function DashboardLayout() {
   const navigate = useNavigate();

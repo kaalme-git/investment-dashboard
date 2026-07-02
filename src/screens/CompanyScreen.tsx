@@ -19,6 +19,8 @@ export default function CompanyScreen() {
   const companyMetrics = useStore((s) => s.portfolio.companyMetrics);
   const isHeld = useStore((s) => s.portfolio.isHeld);
   const setStyleOverride = useStore((s) => s.setStyleOverride);
+  const stockStyles = useStore((s) => s.stockStyles);
+  const setStockStyle = useStore((s) => s.setStockStyle);
   const [draft, setDraft] = useState("");
 
   const metrics = companyMetrics(ticker);
@@ -109,6 +111,26 @@ export default function CompanyScreen() {
                     <button className="clsreset" onClick={() => setStyleOverride(metrics.isin, null)}>reset</button>
                   </span>
                 )}
+              </div>
+            )}
+
+            {metrics.bucketAsset === "Stocks" && metrics.isin && (
+              <div className="clsovr">
+                <span className="clssub" style={{ margin: 0 }}>Company type</span>
+                <div className="selwrap">
+                  <select
+                    className="sel"
+                    value={stockStyles[metrics.isin] ?? ""}
+                    onChange={(e) => setStockStyle(metrics.isin, (e.target.value || null) as "growth" | "cyclical" | "defensive" | "neutral" | null)}
+                  >
+                    <option value="">Unclassified</option>
+                    <option value="growth">Growth</option>
+                    <option value="cyclical">Cyclical</option>
+                    <option value="defensive">Defensive</option>
+                    <option value="neutral">Neutral</option>
+                  </select>
+                </div>
+                <span className="clsovrnote">Used by the Analysis tab (aggressiveness &amp; macro-risk scales).</span>
               </div>
             )}
             {metrics.fundSectors && (

@@ -41,3 +41,7 @@ APIError: No historical data available for ^990100
 2026-07-01 16:01:04,366 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
 2026-07-01 16:01:07,709 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
 2026-07-01 16:01:10,384 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2026-07-02 17:06:40,422 - stockflow-server-v2 - INFO - Starting Stockflow server v2...
+2026-07-02 17:06:40,446 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-07-02 17:09:42,011 - stockflow-server-v2 - INFO - Starting Stockflow server v2...
+2026-07-02 17:09:42,034 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
