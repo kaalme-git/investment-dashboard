@@ -978,12 +978,18 @@ function buildTWR(asc: Txn[], prices: PriceMap, fallbackPx: Record<string, numbe
       const c = t.category;
       if (c === "deposit") { eC += t.amount || 0; eCI += Math.max(0, t.amount || 0); }
       else if (c === "withdrawal") { eC += t.amount || 0; } // amount is negative
-      else if (c === "buy" && sl) { wBuy[sl] += t.acqValue > 0 ? t.acqValue : t.qty * t.price + t.fee; }
-      else if (c === "sell" && sl) { wSell[sl] += t.qty * t.price - t.fee; }
+      // buy/sell boundary flows use the ledger's EUR `amount` (what actually crossed the
+      // cash boundary); qty*price and acqValue are in the instrument's trading currency,
+      // which fabricates subset returns for SEK/DKK/USD trades. Fallback for amount-less rows.
+      else if (c === "buy" && sl) { wBuy[sl] += t.amount < 0 ? -t.amount : t.acqValue > 0 ? t.acqValue : t.qty * t.price + t.fee; }
+      else if (c === "sell" && sl) { wSell[sl] += t.amount > 0 ? t.amount : t.qty * t.price - t.fee; }
       else if (c === "dividend" && sl) { wDiv[sl] += t.amount || 0; }
+      // withholding tax nets against the paying sleeve's dividend flow — otherwise the
+      // gross dividend is CF-neutralized while its tax drains cash as a phantom loss
+      else if (c === "tax" && sl) { wDiv[sl] += t.amount || 0; }
       else if (c === "transfer_in" && sl && u) { wXIn[sl] += t.qty * priceAt(u, +new Date(t.date)); }
       else if (c === "transfer_out" && sl && u) { wXOut[sl] += t.qty * priceAt(u, +new Date(t.date)); }
-      // fee / tax / interest / other: internal, already reflected in cashBal (net-of-cost return)
+      // fee / interest / account-level tax / other: internal, already reflected in cashBal
       ti++;
     }
     // sleeve market values at this grid point
