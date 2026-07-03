@@ -91,7 +91,7 @@
 
 /* dense KPI strip */
 .kstrip{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--c-br-subtle);border-radius:10px;overflow:hidden;margin-bottom:16px}
-.kc{padding:13px 16px;border-right:1px solid var(--c-br-subtle)}
+.kc{padding:13px 16px;border-right:1px solid var(--c-br-subtle);position:relative}
 .kc:last-child{border-right:none}
 .klbl{font-size:11px;color:var(--c-fg-subtle);text-transform:uppercase;letter-spacing:.05em;font-weight:600;white-space:nowrap}
 .knum{font-size:19px;font-weight:700;margin-top:5px;letter-spacing:-.01em}
@@ -171,6 +171,7 @@
 .askbtn{border:none;background:#0000e6;color:#fff;font:600 14px var(--font-family);padding:0 22px;border-radius:1.5em;cursor:pointer;white-space:nowrap;letter-spacing:var(--letter-spacing)}
 .askbtn:hover{background:var(--c-brand-blue-dark)}
 .askbtn:disabled{opacity:.45;cursor:default}
+.askbtn.notepost{height:34px} /* taller Post note button (company page) — same width */
 .aichips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
 .aichip{border:1px solid var(--c-br-muted);background:#fff;color:var(--c-fg-muted);font:500 12.5px var(--font-family);padding:6px 12px;border-radius:1.5em;cursor:pointer}
 .aichip:hover{border-color:#0000e6;color:#000}
@@ -265,6 +266,11 @@
 .dgv2{grid-column:7;justify-self:end;font-size:14px;font-weight:700}
 .dgw2{grid-column:11;justify-self:end;font-size:14px;font-weight:700}
 .srcnote{font-size:11.5px;color:var(--c-fg-subtle);line-height:1.5;margin-top:12px;padding:0 2px}
+
+/* privacy mode: eye toggle inside the Total value KPI (absolute → no layout shift) */
+.hidebtn{position:absolute;top:9px;right:10px;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;background:none;border-radius:6px;color:var(--c-fg-subtle);cursor:pointer;padding:0}
+.hidebtn:hover{color:var(--c-fg-strong);background:var(--c-bg-muted)}
+.hidebtn.on{color:var(--c-brand-blue)}
 
 /* hover info popover (column-header explanations) */
 .infotip{position:relative;display:inline-flex;vertical-align:middle;margin-left:4px}
@@ -588,9 +594,50 @@
 
 .divyear.divfut{fill:var(--c-fg-subtle);font-style:italic}
 
+/* ---- confirmation modal (destructive actions) ---- */
+.cdlg-backdrop{position:fixed;inset:0;background:rgba(0,8,37,.32);backdrop-filter:blur(2px);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
+.cdlg{width:100%;max-width:400px;background:#fff;border:1px solid var(--c-br-subtle);border-radius:12px;box-shadow:var(--shadow-lg);padding:20px 22px;animation:cdlgpop .14s ease-out}
+@keyframes cdlgpop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+.cdlg-ttl{font-size:16px;font-weight:700;letter-spacing:var(--letter-spacing)}
+.cdlg-msg{font-size:13.5px;color:var(--c-fg-muted);line-height:1.55;margin-top:8px}
+.cdlg-acts{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.cdlg-btn{height:36px;padding:0 16px;border-radius:1.5em;border:1px solid var(--c-br-muted);background:#fff;font:600 13px var(--font-family);color:var(--c-fg-strong);cursor:pointer}
+.cdlg-btn:hover{background:var(--c-bg-subtle)}
+.cdlg-btn.danger{background:var(--c-fg-error);border-color:var(--c-fg-error);color:#fff}
+.cdlg-btn.danger:hover{opacity:.88;background:var(--c-fg-error)}
+
+/* ---- company attachments (Supabase Storage) ---- */
+.attcard{padding:18px 20px;margin-bottom:16px}
+.attwrap{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.attrow{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--c-br-subtle);border-radius:8px;background:var(--c-bg-subtle)}
+.attname{display:inline-flex;align-items:center;gap:7px;border:none;background:none;padding:0;font:600 12.5px var(--font-family);color:var(--c-brand-blue);cursor:pointer;min-width:0}
+.attname span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attname:hover{text-decoration:underline}
+.attsize{margin-left:auto;font-size:11px;color:var(--c-fg-subtle);flex:none}
+.attdel{border:none;background:none;color:var(--c-fg-subtle);font-size:12px;cursor:pointer;padding:2px 4px;flex:none}
+.attdel:hover{color:var(--c-fg-error)}
+.attadd{align-self:flex-start;border:1px solid var(--c-br-muted);background:#fff;border-radius:1.5em;padding:6px 14px;font:600 12px var(--font-family);color:var(--c-brand-blue);cursor:pointer}
+.attadd:hover:not(:disabled){border-color:var(--c-brand-blue)}
+.attadd:disabled{opacity:.55;cursor:default}
+.atterr{margin-top:10px;background:var(--c-bg-error);border:1px solid var(--c-fg-error);color:var(--c-fg-error);border-radius:8px;padding:8px 11px;font-size:12.5px}
+.attcompact{margin-top:9px;padding-top:8px;border-top:1px dashed var(--c-br-subtle)}
+.attcompact .attadd{padding:3px 10px;font-size:11px}
+.attcompact .attrow{padding:5px 9px;background:#fff}
+
 /* ---- company posted-notes feed ---- */
 .noteform{margin-top:6px}
+.notetitlein{width:100%;border:1px solid var(--c-br-muted);border-radius:10px;padding:10px 14px;font:600 13.5px var(--font-family);color:var(--c-fg-strong);background:var(--c-bg-subtle);margin-top:12px;box-sizing:border-box}
+.notetitlein:focus{outline:none;border-color:var(--c-brand-blue);background:#fff}
+.noteform .notein{margin-top:8px}
 .notein{width:100%;min-height:64px}
+.notehead{display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none}
+.notetitle{font-size:13.5px;font-weight:700;letter-spacing:var(--letter-spacing);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.notehead .notets{margin-left:auto;flex:none}
+.notehead .notedel{flex:none}
+.notechev{border:none;background:none;padding:2px;color:var(--c-fg-subtle);cursor:pointer;display:inline-flex;flex:none;transition:transform .15s ease}
+.notechev.open{transform:rotate(90deg)}
+.notehead:hover .notechev{color:var(--c-fg-strong)}
+.noteitem .notetext{margin-top:8px}
 .noteformfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
 .notelist{margin-top:16px;display:flex;flex-direction:column;gap:10px}
 .noteitem{border:1px solid var(--c-br-subtle);border-radius:10px;padding:11px 13px;background:var(--c-bg-subtle)}

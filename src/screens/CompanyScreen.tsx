@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useStore } from "../store/useStore";
 import { reportsForTicker, mapRes } from "../data/research";
 import ResearchCard from "../components/ResearchCard";
+import Attachments from "../components/Attachments";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { type CompanyFile, listCompanyFiles, uploadCompanyFile, deleteCompanyFile, deleteScopeFiles } from "../data/filesRepo";
+import { supabaseEnabled } from "../lib/supabase";
 
 const stCls: Record<string, string> = { Portfolio: "st-pf", Watchlist: "st-wl", Inactive: "st-in" };
 const fmtTs = (ts: number) =>
@@ -21,7 +25,72 @@ export default function CompanyScreen() {
   const setStyleOverride = useStore((s) => s.setStyleOverride);
   const stockStyles = useStore((s) => s.stockStyles);
   const setStockStyle = useStore((s) => s.setStockStyle);
+  const user = useStore((s) => s.user);
   const [draft, setDraft] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
+  // collapsed-by-default notes: ids the user has expanded
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleNote = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  // ---- attachments (Supabase Storage): "general" scope + one per posted note ----
+  const filesOn = supabaseEnabled && !!user;
+  const [filesByScope, setFilesByScope] = useState<Record<string, CompanyFile[]>>({});
+  const [uploadScope, setUploadScope] = useState<string | null>(null); // scope currently uploading
+  const [fileError, setFileError] = useState<string | null>(null);
+  const pickScope = useRef("general");
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const reloadFiles = async () => {
+    if (!filesOn || !user) return;
+    setFilesByScope(await listCompanyFiles(user.id, ticker));
+  };
+  useEffect(() => { void reloadFiles(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user?.id, ticker]);
+
+  const pickFor = (scope: string) => {
+    pickScope.current = scope;
+    setFileError(null);
+    fileInput.current?.click();
+  };
+  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!f || !user) return;
+    setUploadScope(pickScope.current);
+    try {
+      await uploadCompanyFile(user.id, ticker, pickScope.current, f);
+      await reloadFiles();
+    } catch (err) {
+      setFileError(String((err as Error)?.message || err));
+    } finally {
+      setUploadScope(null);
+    }
+  };
+  const onFileDelete = async (f: CompanyFile) => {
+    try { await deleteCompanyFile(f.path); await reloadFiles(); }
+    catch (err) { setFileError(String((err as Error)?.message || err)); }
+  };
+  // note deletion goes through a styled confirmation modal (cannot be recovered)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const confirmDeleteNote = () => {
+    if (!pendingDelete) return;
+    if (filesOn && user) void deleteScopeFiles(user.id, ticker, "note-" + pendingDelete.id).then(() => reloadFiles());
+    removeNote(ticker, pendingDelete.id);
+    setPendingDelete(null);
+  };
+  const deleteMsg = (() => {
+    if (!pendingDelete) return "";
+    const nFiles = (filesByScope["note-" + pendingDelete.id] || []).length;
+    return (
+      `"${pendingDelete.title}"` +
+      (nFiles > 0 ? ` and its ${nFiles} attached file${nFiles === 1 ? "" : "s"}` : "") +
+      " will be permanently deleted. This cannot be undone."
+    );
+  })();
 
   const metrics = companyMetrics(ticker);
   const held = isHeld(ticker);
@@ -32,8 +101,9 @@ export default function CompanyScreen() {
   const companyNotes = [...(notes[ticker] || [])].sort((a, b) => b.ts - a.ts);
 
   const post = () => {
-    if (!draft.trim()) return;
-    addNote(ticker, draft);
+    if (!draft.trim() || !titleDraft.trim()) return;
+    addNote(ticker, titleDraft, draft);
+    setTitleDraft("");
     setDraft("");
   };
 
@@ -177,6 +247,32 @@ export default function CompanyScreen() {
           </div>
         )}
 
+        {filesOn && (
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg"
+            style={{ display: "none" }}
+            onChange={(e) => void onFilePicked(e)}
+          />
+        )}
+
+        {filesOn && (
+          <div className="card attcard">
+            <div className="cardttl">Attachments</div>
+            <div className="modehint" style={{ marginTop: 2 }}>
+              Files saved to your account and tied to {ticker} — reports, spreadsheets, notes from meetings…
+            </div>
+            {fileError && <div className="atterr">{fileError}</div>}
+            <Attachments
+              files={filesByScope.general || []}
+              busy={uploadScope === "general"}
+              onPick={() => pickFor("general")}
+              onDelete={(f) => void onFileDelete(f)}
+            />
+          </div>
+        )}
+
         {reports.length > 0 && (
           <div className="cores">
             <div className="coresttl">Inderes research</div>
@@ -191,6 +287,13 @@ export default function CompanyScreen() {
         <div className="card conotes">
           <div className="cardttl">Notes</div>
           <div className="noteform">
+            <input
+              className="notetitlein"
+              placeholder="Title — e.g. Q2 result thoughts"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              maxLength={80}
+            />
             <textarea
               className="stratin notein"
               rows={3}
@@ -201,7 +304,7 @@ export default function CompanyScreen() {
             />
             <div className="noteformfoot">
               <span className="modehint">Saved to your account and tied to {ticker}.</span>
-              <button className="askbtn" onClick={post} disabled={!draft.trim()}>Post note</button>
+              <button className="askbtn notepost" onClick={post} disabled={!draft.trim() || !titleDraft.trim()}>Post note</button>
             </div>
           </div>
 
@@ -209,19 +312,62 @@ export default function CompanyScreen() {
             <div className="emptyhint" style={{ padding: "14px 2px 4px" }}>No notes yet — post your first above.</div>
           ) : (
             <div className="notelist">
-              {companyNotes.map((n) => (
-                <div className="noteitem" key={n.id}>
-                  <div className="notemeta">
-                    <span className="notets">{fmtTs(n.ts)}</span>
-                    <button className="notedel" onClick={() => removeNote(ticker, n.id)} title="Delete note">Delete</button>
+              {companyNotes.map((n) => {
+                const open = expanded.has(n.id);
+                return (
+                  <div className="noteitem" key={n.id}>
+                    <div className="notehead" onClick={() => toggleNote(n.id)}>
+                      <button
+                        className={"notechev" + (open ? " open" : "")}
+                        onClick={(e) => { e.stopPropagation(); toggleNote(n.id); }}
+                        title={open ? "Collapse note" : "Expand note"}
+                        aria-expanded={open}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <span className="notetitle">{n.title}</span>
+                      <span className="notets">{fmtTs(n.ts)}</span>
+                      <button
+                        className="notedel"
+                        onClick={(e) => { e.stopPropagation(); setPendingDelete({ id: n.id, title: n.title }); }}
+                        title="Delete note (and its attachments)"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    {open && (
+                      <>
+                        <div className="notetext">{n.text}</div>
+                        {filesOn && (
+                          <Attachments
+                            compact
+                            files={filesByScope["note-" + n.id] || []}
+                            busy={uploadScope === "note-" + n.id}
+                            onPick={() => pickFor("note-" + n.id)}
+                            onDelete={(f) => void onFileDelete(f)}
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
-                  <div className="notetext">{n.text}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete note?"
+          message={deleteMsg}
+          confirmLabel="Delete note"
+          onConfirm={confirmDeleteNote}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </>
   );
 }

@@ -7,6 +7,8 @@ interface Props {
   labels?: string[];
   hoverIdx?: number | null;
   onHover?: (i: number | null) => void;
+  /** Privacy mode: hide euro figures (axis, target, tooltip) — the curve's shape stays. */
+  mask?: boolean;
 }
 
 const esShort = (v: number) =>
@@ -15,7 +17,8 @@ const esShort = (v: number) =>
 /** Forward-projection line chart — ported from the prototype's projChart().
  *  Euro Y-axis + calendar-year X-axis as HTML overlays (the SVG is stretched
  *  with preserveAspectRatio:none, so axis text can't live inside it). */
-export default function ProjectionChart({ exp, target, height = 250, baseYear, labels: xLabels, hoverIdx = null, onHover }: Props) {
+export default function ProjectionChart({ exp, target, height = 250, baseYear, labels: xLabels, hoverIdx = null, onHover, mask = false }: Props) {
+  const money = (v: number) => (mask ? "•••" : esShort(v));
   const w = 760;
   const padL = 64;
   const padR = 12;
@@ -42,7 +45,7 @@ export default function ProjectionChart({ exp, target, height = 250, baseYear, l
     grid.push(<line key={"g" + i} x1={padL} y1={y} x2={w - padR} y2={y} stroke="#eee" strokeWidth={1} vectorEffect="non-scaling-stroke" />);
     labels.push(
       <div key={"yl" + i} className="pcax" style={{ position: "absolute", left: 0, width: (padL / w) * 100 + "%", paddingRight: 6, boxSizing: "border-box", textAlign: "right", top: y - 6 + "px" }}>
-        {esShort(v)}
+        {money(v)}
       </div>,
     );
   }
@@ -57,7 +60,7 @@ export default function ProjectionChart({ exp, target, height = 250, baseYear, l
   if (target) {
     labels.push(
       <div key="tgl" className="pcax pcaxt" style={{ position: "absolute", right: (padR / w) * 100 + "%", top: Y(target) - 16 + "px" }}>
-        Target {esShort(target)}
+        Target {money(target)}
       </div>,
     );
   }
@@ -126,7 +129,7 @@ export default function ProjectionChart({ exp, target, height = 250, baseYear, l
           }}
         >
           <div style={{ fontSize: 10.5, color: "var(--c-fg-subtle)", fontFamily: "var(--font-family-mono)", marginBottom: 4 }}>{xLabels ? xLabels[hoverIdx] : baseYear + hoverIdx}</div>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>{"€" + Math.round(exp[hoverIdx]).toLocaleString("en-US")}</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{mask ? "•••••" : "€" + Math.round(exp[hoverIdx]).toLocaleString("en-US")}</div>
         </div>
       )}
     </div>

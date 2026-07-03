@@ -115,3 +115,19 @@ alter table public.user_settings enable row level security;
 drop policy if exists "own settings" on public.user_settings;
 create policy "own settings" on public.user_settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Company attachments (Supabase STORAGE, bucket "company-files", private).
+-- Objects live under {userId}/{ticker}/{scope}/{file}; each user may only
+-- touch their own {userId}/ folder. The bucket itself is created via the API
+-- (or Dashboard → Storage); these policies must be run in the SQL editor.
+-- ---------------------------------------------------------------------------
+drop policy if exists "own company files select" on storage.objects;
+create policy "own company files select" on storage.objects for select
+  using (bucket_id = 'company-files' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "own company files insert" on storage.objects;
+create policy "own company files insert" on storage.objects for insert
+  with check (bucket_id = 'company-files' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "own company files delete" on storage.objects;
+create policy "own company files delete" on storage.objects for delete
+  using (bucket_id = 'company-files' and (storage.foldername(name))[1] = auth.uid()::text);

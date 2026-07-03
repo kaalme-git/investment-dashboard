@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useStore, type StockStyle } from "../../store/useStore";
 import { eur } from "../../data/format";
+import { VALUE_MASK } from "../../data/live";
 
 const TYPE_CLS: Record<StockStyle, string> = { growth: "an-growth", cyclical: "an-cyclical", defensive: "an-defensive", neutral: "an-neutral" };
 
@@ -20,6 +21,7 @@ export default function AnalysisTab() {
   const stocks = useStore((s) => s.portfolio.analysisStocks);
   const stockStyles = useStore((s) => s.stockStyles);
   const setStockStyle = useStore((s) => s.setStockStyle);
+  const hideValues = useStore((s) => s.hideValues);
 
   const total = stocks.reduce((s, h) => s + h.value, 0);
   const share = (st: StockStyle | null) =>
@@ -135,7 +137,7 @@ export default function AnalysisTab() {
       </div>
 
       <div className="srcnote">
-        Individual stocks only; weights are shares of the stock portfolio ({eur(total)}). P/E is the current price ÷
+        Individual stocks only; weights are shares of the stock portfolio ({hideValues ? VALUE_MASK : eur(total)}). P/E is the current price ÷
         Inderes current-year EPS estimate, falling back to Yahoo Finance trailing P/E; loss-making companies show
         "neg.", are excluded from the portfolio P/E, and tilt the aggressiveness scale up. Company types are your own
         classifications, saved to your account — Neutral counts as average in both scales. Portfolio P/E is

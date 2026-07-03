@@ -1,5 +1,6 @@
 import { useStore } from "../store/useStore";
 import { eur } from "../data/format";
+import { VALUE_MASK } from "../data/live";
 import ProjectionChart from "../charts/ProjectionChart";
 import IconChevronDown from "../icons/chevronDown";
 
@@ -24,6 +25,7 @@ export default function CalculationsScreen() {
   const setCalcAllocMode = useStore((s) => s.setCalcAllocMode);
   const assetCurrent = useStore((s) => s.portfolio.assetCurrent);
   const totalValue = useStore((s) => s.portfolio.totalValue);
+  const hideValues = useStore((s) => s.hideValues);
 
   // target-allocation weights (cash = remainder), matching the Strategy tab
   const editSum = EDIT_LABELS.reduce((s, l) => s + numv(targets[l]), 0);
@@ -73,10 +75,10 @@ export default function CalculationsScreen() {
     ? "Set a target to track progress towards it."
     : rIdx >= 0
       ? `On the expected path you reach €${Math.round(targetNum).toLocaleString("en-US")} around ${baseYear + rIdx} (year ${rIdx} of the projection).`
-      : `Target €${Math.round(targetNum).toLocaleString("en-US")} is not reached within ${years}y on the expected path — projected ${eur(projEnd)}, a gap of ${eur(targetNum - projEnd)}.`;
+      : `Target €${Math.round(targetNum).toLocaleString("en-US")} is not reached within ${years}y on the expected path — projected ${hideValues ? VALUE_MASK : eur(projEnd)}, a gap of ${hideValues ? VALUE_MASK : eur(targetNum - projEnd)}.`;
 
   const calcTargetStr = calcTarget === "" ? "" : Number(calcTarget).toLocaleString("en-US");
-  const gainStr = (gainC >= 0 ? "+" : "−") + eur(Math.abs(gainC));
+  const gainStr = hideValues ? VALUE_MASK : (gainC >= 0 ? "+" : "−") + eur(Math.abs(gainC));
 
   return (
     <>
@@ -151,11 +153,11 @@ export default function CalculationsScreen() {
         <div className="kstrip k4cal">
           <div className="kc">
             <div className="klbl">Projected value · {years}y</div>
-            <div className="knum num">{eur(projEnd)}</div>
+            <div className="knum num">{hideValues ? VALUE_MASK : eur(projEnd)}</div>
           </div>
           <div className="kc">
             <div className="klbl">Invested capital</div>
-            <div className="knum num">{eur(investedCap)}</div>
+            <div className="knum num">{hideValues ? VALUE_MASK : eur(investedCap)}</div>
           </div>
           <div className="kc">
             <div className="klbl">Of which contributions</div>
@@ -170,7 +172,7 @@ export default function CalculationsScreen() {
         <div className="card calcchart">
           <div className="cardttl sm">Projected portfolio value</div>
           <div className="calchartwrap">
-            <ProjectionChart exp={expPath} target={targetNum} baseYear={baseYear} hoverIdx={calcHover} onHover={setCalcHover} />
+            <ProjectionChart exp={expPath} target={targetNum} baseYear={baseYear} hoverIdx={calcHover} onHover={setCalcHover} mask={hideValues} />
           </div>
           <div className="perflegend callegend">
             <span className="lg lgp">Expected path</span>

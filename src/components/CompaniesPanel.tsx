@@ -53,7 +53,7 @@ export default function CompaniesPanel() {
         </div>
         {companies.map((co) => {
           const list = notes[co.ticker] || [];
-          const latest = list.length ? [...list].sort((a, b) => b.ts - a.ts)[0].text : "";
+          const latest = list.length ? [...list].sort((a, b) => b.ts - a.ts)[0].title : "";
           const preview = list.length
             ? `${list.length} note${list.length > 1 ? "s" : ""} · ${latest.length > 70 ? latest.slice(0, 70) + "…" : latest}`
             : "No notes yet — open to add";

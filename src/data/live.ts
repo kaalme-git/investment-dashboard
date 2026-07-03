@@ -328,9 +328,15 @@ export interface Portfolio {
 
 const recStub = { recShort: "—", recCls: "na" };
 
-export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: StyleOverrides = {}): Portfolio {
+/** Mask shown instead of market-value euro amounts in privacy ("hide values") mode. */
+export const VALUE_MASK = "•••••";
+
+export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: StyleOverrides = {}, hideValues = false): Portfolio {
   const keyOf = (t: Txn) => t.isin || t.ticker || t.name;
   const fallbackPx = lastTxnPrice(txns);
+  // privacy mode: market values render as dots; prices, costs, dividends and
+  // percentages stay visible (they don't reveal the portfolio's size directly)
+  const eurV = (n: number) => (hideValues ? VALUE_MASK : eur(n));
 
   // ---- walk chronologically: positions (avg cost) + cash balance ----
   const asc = txns
@@ -481,11 +487,11 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   const cashPct = (cashTotal / safeTotal) * 100;
 
   const kpis: Kpi[] = [
-    { label: "Total value", value: eur(TOTAL), cls: "" },
+    { label: "Total value", value: eurV(TOTAL), cls: "" },
     { label: "Today", value: sgn(dayPct, 2), cls: dayPct >= 0 ? "up" : "down" },
     { label: "Total return", value: sgn(totRetPct), cls: totRetPct >= 0 ? "up" : "down" },
-    { label: "Holdings", value: eur(holdingsValue), cls: "" },
-    { label: "Cash", value: eur(cashTotal), cls: "" },
+    { label: "Holdings", value: eurV(holdingsValue), cls: "" },
+    { label: "Cash", value: eurV(cashTotal), cls: "" },
     { label: "Passive", value: passivePct.toFixed(1) + "%", cls: "" },
     { label: "Div. yield", value: divYield.toFixed(2) + "%", cls: "" },
   ];
@@ -510,7 +516,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   // contributions behind each bucket (for the drill-down panel). Cash (real +
   // money-market) is a single bucket, labelled per view.
   const contribRow = (h: Sec, value: number, note?: string): AllocContribution => ({
-    ticker: h.ticker, name: h.name, value, valueStr: eur(value), pctStr: ((value / safeTotal) * 100).toFixed(1) + "%", note,
+    ticker: h.ticker, name: h.name, value, valueStr: eurV(value), pctStr: ((value / safeTotal) * 100).toFixed(1) + "%", note,
   });
   function aggregate(contribs: (h: Sec) => { label: string; value: number; note?: string }[], cashLabel = "Cash") {
     const m: Record<string, number> = {};
@@ -524,7 +530,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     if (cashTotal > 0) {
       m[cashLabel] = (m[cashLabel] || 0) + cashTotal;
       const cd = (detail[cashLabel] ||= []);
-      if (CASH_V > 0) cd.push({ ticker: "CASH", name: "Cash balance (EUR)", value: CASH_V, valueStr: eur(CASH_V), pctStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%" });
+      if (CASH_V > 0) cd.push({ ticker: "CASH", name: "Cash balance (EUR)", value: CASH_V, valueStr: eurV(CASH_V), pctStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%" });
       secs.filter((s) => s.cls.group === "Cash").forEach((h) => cd.push(contribRow(h, h.value)));
     }
     for (const k in detail) detail[k].sort((a, b) => b.value - a.value);
@@ -603,7 +609,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
       sector: h.cls.sectorLabel,
       lastStr: h.last.toFixed(2),
       weightStr: ((h.value / safeTotal) * 100).toFixed(1) + "%",
-      valueStr: eur(h.value),
+      valueStr: eurV(h.value),
       totalStr: sgn(h.totalPct),
       totCls: h.totalPct >= 0 ? "up" : "down",
       recShort: h.recShort,
@@ -616,7 +622,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   };
   const cashRow: TableRow = {
     ticker: "CASH", name: "Cash balance (EUR)", sector: "—", lastStr: "—",
-    weightStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%", valueStr: eur(CASH_V),
+    weightStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%", valueStr: eurV(CASH_V),
     totalStr: "—", totCls: "", ...recStub, typeLbl: "Cash", typeCls: "tp csh", sparkData: null, sparkUp: true,
   };
   const tableGroups: TableGroup[] = grpMeta
@@ -624,7 +630,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
       const items = secs.filter((h) => h.cls.group === g.key).map(rowOf);
       const rows = g.key === "Cash" ? [...items, cashRow] : items;
       const val = gVal(g.key);
-      return { key: g.key, label: g.label, valueStr: eur(val), pctStr: ((val / safeTotal) * 100).toFixed(1) + "%", rows };
+      return { key: g.key, label: g.label, valueStr: eurV(val), pctStr: ((val / safeTotal) * 100).toFixed(1) + "%", rows };
     })
     .filter((g) => g.rows.length);
 
@@ -640,7 +646,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
       sharesStr: h.qty.toLocaleString("en-US", { maximumFractionDigits: 2 }),
       avgStr: "€" + (h.qty ? h.cost / h.qty : 0).toFixed(2),
       lastStr: h.last.toFixed(2),
-      valueStr: eur(h.value),
+      valueStr: eurV(h.value),
       dayStr: sgn(h.dayPct),
       dayCls: h.dayPct >= 0 ? "up" : "down",
       totalStr: sgn(h.totalPct),
@@ -653,7 +659,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
   };
   const cashRowFull: HoldRow = {
     ticker: "CASH", name: "Cash balance (EUR)", typeLbl: "Cash", typeCls: "tp csh", sector: "—",
-    sharesStr: "—", avgStr: "—", lastStr: "—", valueStr: eur(CASH_V), dayStr: "—", dayCls: "",
+    sharesStr: "—", avgStr: "—", lastStr: "—", valueStr: eurV(CASH_V), dayStr: "—", dayCls: "",
     totalStr: "—", totCls: "", yieldStr: "—", weightStr: ((CASH_V / safeTotal) * 100).toFixed(1) + "%", ...recStub,
   };
   const holdingsGroups: HoldGroup[] = grpMeta
@@ -661,7 +667,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
       const items = secs.filter((h) => h.cls.group === g.key).map(rowFull);
       const rows = g.key === "Cash" ? [...items, cashRowFull] : items;
       const val = gVal(g.key);
-      return { key: g.key, label: g.label, valueStr: eur(val), pctStr: ((val / safeTotal) * 100).toFixed(1) + "%", rows };
+      return { key: g.key, label: g.label, valueStr: eurV(val), pctStr: ((val / safeTotal) * 100).toFixed(1) + "%", rows };
     })
     .filter((g) => g.rows.length);
 
@@ -673,7 +679,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
     ticker: h.ticker,
     name: h.name,
     value: h.value,
-    valueStr: eur(h.value),
+    valueStr: eurV(h.value),
     weightPct: (h.value / anTotal) * 100,
     weightStr: ((h.value / anTotal) * 100).toFixed(1) + "%",
     pe: h.pe,
@@ -718,7 +724,7 @@ export function buildPortfolio(txns: Txn[], prices: PriceMap, styleOverrides: St
       sector: h.cls.sectorLabel,
       region: h.region,
       lastStr: h.last.toFixed(2),
-      valueStr: eur(h.value),
+      valueStr: eurV(h.value),
       dayStr: sgn(h.dayPct),
       dayCls: h.dayPct >= 0 ? "up" : "down",
       totalStr: sgn(h.totalPct),

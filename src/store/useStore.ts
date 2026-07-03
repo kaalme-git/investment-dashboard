@@ -54,6 +54,15 @@ function persistPrices(prices: PriceMap, fetchedAt: number) {
   try { localStorage.setItem(LS_PRICES, JSON.stringify({ prices, fetchedAt })); } catch { /* ignore */ }
 }
 
+// privacy mode ("hide values"): a device-level preference, so it survives reloads
+const LS_HIDE = "pf_hide_values";
+function loadHideValues(): boolean {
+  try { return localStorage.getItem(LS_HIDE) === "1"; } catch { return false; }
+}
+function persistHideValues(v: boolean) {
+  try { localStorage.setItem(LS_HIDE, v ? "1" : "0"); } catch { /* ignore */ }
+}
+
 export interface PendingImport {
   txns: Txn[];
   name: string;
@@ -119,7 +128,7 @@ async function commitTxns(
         pendingImport: null,
         txFile: name + " · " + (replace ? "replaced — " : "") + merged.length + " transactions in account",
         importResult: importSummary(parsed, merged.length - before, merged.length, name, replace),
-        portfolio: buildPortfolio(merged, get().prices, get().styleOverrides),
+        portfolio: buildPortfolio(merged, get().prices, get().styleOverrides, get().hideValues),
       });
       void get().fetchPrices(true);
     } catch (e) {
@@ -138,7 +147,7 @@ async function commitTxns(
     pendingImport: null,
     txFile: name + " · " + merged.length + " transactions",
     importResult: importSummary(parsed, merged.length - base.length, merged.length, name, replace),
-    portfolio: buildPortfolio(merged, get().prices),
+    portfolio: buildPortfolio(merged, get().prices, get().styleOverrides, get().hideValues),
   });
   void get().fetchPrices(true);
 }
@@ -210,6 +219,7 @@ Target ~70% equities. Rebalance when any asset class drifts more than 5pp from t
 export interface NoteEntry {
   id: string;
   ts: number; // posted-at (ms)
+  title: string; // user-defined headline (older notes get one derived from the text)
   text: string;
 }
 export type NotesMap = Record<string, NoteEntry[]>;
@@ -222,18 +232,31 @@ export function newId(): string {
   }
 }
 
-// Accept both the new shape (arrays of notes) and the legacy shape (one string
-// per company) and normalise to NotesMap so older saved notes aren't lost.
+// A title for notes saved before titles existed: the first line, trimmed to ~48 chars.
+function derivedTitle(text: string): string {
+  const first = text.trim().split("\n")[0].trim();
+  return first.length > 48 ? first.slice(0, 47).trimEnd() + "…" : first || "Note";
+}
+
+// Accept both the new shape (arrays of notes) and the legacy shapes (one string
+// per company / notes without titles) and normalise so older notes aren't lost.
 export function normalizeNotes(raw: unknown): NotesMap {
   const out: NotesMap = {};
   if (!raw || typeof raw !== "object") return out;
   for (const [ticker, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v === "string") {
-      if (v.trim()) out[ticker] = [{ id: newId(), ts: 0, text: v.trim() }];
+      if (v.trim()) out[ticker] = [{ id: newId(), ts: 0, title: derivedTitle(v), text: v.trim() }];
     } else if (Array.isArray(v)) {
       const list = v
         .filter((n) => n && typeof (n as NoteEntry).text === "string" && (n as NoteEntry).text.trim())
-        .map((n) => ({ id: (n as NoteEntry).id || newId(), ts: (n as NoteEntry).ts || 0, text: (n as NoteEntry).text }));
+        .map((n) => ({
+          id: (n as NoteEntry).id || newId(),
+          ts: (n as NoteEntry).ts || 0,
+          title: typeof (n as NoteEntry).title === "string" && (n as NoteEntry).title.trim()
+            ? (n as NoteEntry).title.trim()
+            : derivedTitle((n as NoteEntry).text),
+          text: (n as NoteEntry).text,
+        }));
       if (list.length) out[ticker] = list;
     }
   }
@@ -251,6 +274,7 @@ function loadNotes(): NotesMap {
 interface DashState {
   // dashboard controls
   bench: string;
+  hideValues: boolean; // privacy mode: market-value euros render as dots (device-level)
   styleOverrides: StyleOverrides; // per-instrument active/passive overrides (by ISIN)
   stockStyles: Record<string, StockStyle>; // per-stock Growth/Cyclical/Defensive label (by ISIN)
   // transactions marked "not a real deposit/withdrawal" (e.g. an IPO subscription
@@ -323,6 +347,7 @@ interface DashState {
   calcAllocMode: "target" | "current"; // which allocation drives the projection
 
   setBench: (b: string) => void;
+  toggleHideValues: () => void;
   setStyleOverride: (isin: string, v: "active" | "passive" | null) => void;
   setStockStyle: (isin: string, v: StockStyle | null) => void;
   toggleDepositExclusion: (txnId: string) => void;
@@ -355,7 +380,7 @@ interface DashState {
   addWatch: () => void;
   addWatchTicker: (ticker: string, name?: string) => void;
   removeWatch: (ticker: string) => void;
-  addNote: (ticker: string, text: string) => void;
+  addNote: (ticker: string, title: string, text: string) => void;
   removeNote: (ticker: string, id: string) => void;
 }
 
@@ -366,6 +391,7 @@ const INITIAL_PRICES = loadPrices();
 
 export const useStore = create<DashState>((set, get) => ({
   bench: "OMXH25",
+  hideValues: loadHideValues(),
   styleOverrides: {},
   stockStyles: {},
   depositExclusions: {},
@@ -413,7 +439,7 @@ export const useStore = create<DashState>((set, get) => ({
       set({ user: u });
       if (evt === "PASSWORD_RECOVERY") set({ recovering: true });
       if (u && u.id !== prevId) void get().loadUserData();
-      if (!u) set({ txns: [], portfolio: buildPortfolio([], get().prices), txFile: "No transactions yet — upload your Nordnet CSV" });
+      if (!u) set({ txns: [], portfolio: buildPortfolio([], get().prices, {}, get().hideValues), txFile: "No transactions yet — upload your Nordnet CSV" });
     });
   },
   signIn: async (email, password) => {
@@ -468,7 +494,7 @@ export const useStore = create<DashState>((set, get) => ({
         txns,
         dataLoading: false,
         txFile: txns.length ? txns.length + " transactions in your account" : "No transactions yet — upload your Nordnet CSV",
-        portfolio: buildPortfolio(txns, get().prices, settings?.styleOverrides ?? s.styleOverrides),
+        portfolio: buildPortfolio(txns, get().prices, settings?.styleOverrides ?? s.styleOverrides, s.hideValues),
         // apply saved settings (fall back to existing defaults for any missing field)
         styleOverrides: settings?.styleOverrides ?? s.styleOverrides,
         stockStyles: settings?.stockStyles ?? s.stockStyles,
@@ -497,7 +523,7 @@ export const useStore = create<DashState>((set, get) => ({
   pricesFetchedAt: INITIAL_PRICES.fetchedAt,
   pricesLoading: false,
   pricesError: null,
-  portfolio: buildPortfolio(INITIAL_TXNS, INITIAL_PRICES.prices),
+  portfolio: buildPortfolio(INITIAL_TXNS, INITIAL_PRICES.prices, {}, loadHideValues()),
   fetchPrices: async (force) => {
     if (get().pricesLoading) return;
     const age = get().pricesFetchedAt ? Date.now() - (get().pricesFetchedAt as number) : Infinity;
@@ -520,7 +546,7 @@ export const useStore = create<DashState>((set, get) => ({
       const prices = { ...get().prices, ...(j.data || {}) };
       const fetchedAt = Date.now();
       persistPrices(prices, fetchedAt);
-      set({ prices, pricesFetchedAt: fetchedAt, pricesLoading: false, portfolio: buildPortfolio(get().txns, prices, get().styleOverrides) });
+      set({ prices, pricesFetchedAt: fetchedAt, pricesLoading: false, portfolio: buildPortfolio(get().txns, prices, get().styleOverrides, get().hideValues) });
     } catch (e) {
       set({ pricesLoading: false, pricesError: String((e as Error)?.message || e) });
     }
@@ -544,12 +570,18 @@ export const useStore = create<DashState>((set, get) => ({
   calcAllocMode: "target",
 
   setBench: (b) => { set({ bench: b }); scheduleSettingsSave(get); },
+  toggleHideValues: () => {
+    const v = !get().hideValues;
+    persistHideValues(v);
+    // rebuild so every preformatted market-value string re-renders masked/unmasked
+    set({ hideValues: v, portfolio: buildPortfolio(get().txns, get().prices, get().styleOverrides, v) });
+  },
   setStyleOverride: (isin, v) => {
     if (!isin) return;
     const next = { ...get().styleOverrides };
     if (v === null) delete next[isin];
     else next[isin] = v;
-    set({ styleOverrides: next, portfolio: buildPortfolio(get().txns, get().prices, next) });
+    set({ styleOverrides: next, portfolio: buildPortfolio(get().txns, get().prices, next, get().hideValues) });
     scheduleSettingsSave(get);
   },
   setStockStyle: (isin, v) => {
@@ -709,7 +741,7 @@ export const useStore = create<DashState>((set, get) => ({
       pendingImport: null,
       importResult: null,
       txFile: "No transactions yet — upload your Nordnet CSV",
-      portfolio: buildPortfolio([], get().prices),
+      portfolio: buildPortfolio([], get().prices, {}, get().hideValues),
     });
   },
 
@@ -764,10 +796,11 @@ export const useStore = create<DashState>((set, get) => ({
     set({ watchlist: wl });
     scheduleSettingsSave(get);
   },
-  addNote: (ticker, text) => {
+  addNote: (ticker, title, text) => {
     const t = text.trim();
-    if (!t) return;
-    const entry: NoteEntry = { id: newId(), ts: Date.now(), text: t };
+    const ttl = title.trim();
+    if (!t || !ttl) return;
+    const entry: NoteEntry = { id: newId(), ts: Date.now(), title: ttl, text: t };
     const notes = { ...get().notes, [ticker]: [...(get().notes[ticker] || []), entry] };
     persistNotes(notes);
     set({ notes });

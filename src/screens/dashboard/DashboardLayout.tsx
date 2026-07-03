@@ -14,6 +14,8 @@ export default function DashboardLayout() {
   const pricesLoading = useStore((s) => s.pricesLoading);
   const pricesFetchedAt = useStore((s) => s.pricesFetchedAt);
   const fetchPrices = useStore((s) => s.fetchPrices);
+  const hideValues = useStore((s) => s.hideValues);
+  const toggleHideValues = useStore((s) => s.toggleHideValues);
   const current = pathname.split("/")[2] || "overview";
 
   const asof = pricesLoading
@@ -77,7 +79,28 @@ export default function DashboardLayout() {
         <div className="kstrip">
           {kpis.map((k) => (
             <div className="kc" key={k.label}>
-              <div className="klbl">{k.label}</div>
+              <div className="klbl">
+                {k.label}
+                {k.label === "Total value" && (
+                  <button
+                    className={"hidebtn" + (hideValues ? " on" : "")}
+                    onClick={toggleHideValues}
+                    title={hideValues ? "Values hidden — click to show euro amounts" : "Hide euro amounts (privacy mode)"}
+                    aria-label="Toggle value visibility"
+                  >
+                    {hideValues ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M3 3l18 18M10.6 5.1A9.8 9.8 0 0 1 12 5c7 0 10 7 10 7a17.4 17.4 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+              </div>
               <div className={"knum num " + k.cls}>{k.value}</div>
             </div>
           ))}

@@ -1,11 +1,16 @@
 import { useStore } from "../../store/useStore";
 import { eur } from "../../data/format";
-import { ACCENT } from "../../data/portfolio";
+import { ACCENT, } from "../../data/portfolio";
+import { VALUE_MASK } from "../../data/live";
 
 const kEur = (v: number) => (v >= 1000 ? "€" + (v / 1000).toFixed(v >= 10000 ? 0 : 1) + "k" : "€" + Math.round(v));
 
 export default function DividendsTab() {
   const dividends = useStore((s) => s.portfolio.dividends);
+  const hideValues = useStore((s) => s.hideValues);
+  // privacy mode: bar heights stay (relative view), the € numbers don't
+  const mEur = (v: number) => (hideValues ? VALUE_MASK : eur(v));
+  const mK = (v: number) => (hideValues ? "•••" : kEur(v));
   const hasEstimate = dividends.some((d) => d.estimated > 0);
   const anyDivs = dividends.some((d) => d.actual > 0 || d.estimated > 0);
   const curYear = new Date().getFullYear();
@@ -54,7 +59,7 @@ export default function DividendsTab() {
               {yTicks.map((t) => (
                 <g key={t}>
                   <line x1={padL} y1={yOf(t)} x2={W - padR} y2={yOf(t)} stroke="#eceef2" strokeWidth="1" />
-                  <text x={padL - 8} y={yOf(t) + 3.5} textAnchor="end" className="divaxis">{kEur(t)}</text>
+                  <text x={padL - 8} y={yOf(t) + 3.5} textAnchor="end" className="divaxis">{mK(t)}</text>
                 </g>
               ))}
 
@@ -73,7 +78,7 @@ export default function DividendsTab() {
                     {he > 0 && (
                       <rect x={x} y={bottom - ha - he} width={barW} height={he} rx="2" fill="url(#divHatch)" stroke={ACCENT} strokeWidth="1" strokeDasharray="3 2" />
                     )}
-                    {total > 0 && <text x={cx} y={bottom - ha - he - 6} textAnchor="middle" className="divval">{kEur(total)}</text>}
+                    {total > 0 && <text x={cx} y={bottom - ha - he - 6} textAnchor="middle" className="divval">{mK(total)}</text>}
                     <text x={cx} y={bottom + 18} textAnchor="middle" className={"divyear" + (future ? " divfut" : "")}>
                       {d.year}{future ? "e" : ""}
                     </text>
@@ -89,19 +94,19 @@ export default function DividendsTab() {
         <div className="kstrip k4cal">
           <div className="kc">
             <div className="klbl">Received {curYear} (YTD)</div>
-            <div className="knum num">{eur(yr(curYear)?.actual || 0)}</div>
+            <div className="knum num">{mEur(yr(curYear)?.actual || 0)}</div>
           </div>
           <div className="kc">
             <div className="klbl">Est. {curYear + 1}</div>
-            <div className="knum num">{hasEstimate ? eur(yr(curYear + 1)?.estimated || 0) : "—"}</div>
+            <div className="knum num">{hasEstimate ? mEur(yr(curYear + 1)?.estimated || 0) : "—"}</div>
           </div>
           <div className="kc">
             <div className="klbl">Est. {curYear + 2}</div>
-            <div className="knum num">{hasEstimate ? eur(yr(curYear + 2)?.estimated || 0) : "—"}</div>
+            <div className="knum num">{hasEstimate ? mEur(yr(curYear + 2)?.estimated || 0) : "—"}</div>
           </div>
           <div className="kc">
             <div className="klbl">Lifetime received</div>
-            <div className="knum num">{eur(lifetime)}</div>
+            <div className="knum num">{mEur(lifetime)}</div>
           </div>
         </div>
       )}
