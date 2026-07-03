@@ -221,6 +221,7 @@ export interface NoteEntry {
   ts: number; // posted-at (ms)
   title: string; // user-defined headline (older notes get one derived from the text)
   text: string;
+  editedTs?: number; // last edit (ms), if the note has been modified after posting
 }
 export type NotesMap = Record<string, NoteEntry[]>;
 
@@ -256,6 +257,7 @@ export function normalizeNotes(raw: unknown): NotesMap {
             ? (n as NoteEntry).title.trim()
             : derivedTitle((n as NoteEntry).text),
           text: (n as NoteEntry).text,
+          editedTs: (n as NoteEntry).editedTs || undefined,
         }));
       if (list.length) out[ticker] = list;
     }
@@ -381,6 +383,7 @@ interface DashState {
   addWatchTicker: (ticker: string, name?: string) => void;
   removeWatch: (ticker: string) => void;
   addNote: (ticker: string, title: string, text: string) => void;
+  updateNote: (ticker: string, id: string, title: string, text: string) => void;
   removeNote: (ticker: string, id: string) => void;
 }
 
@@ -802,6 +805,16 @@ export const useStore = create<DashState>((set, get) => ({
     if (!t || !ttl) return;
     const entry: NoteEntry = { id: newId(), ts: Date.now(), title: ttl, text: t };
     const notes = { ...get().notes, [ticker]: [...(get().notes[ticker] || []), entry] };
+    persistNotes(notes);
+    set({ notes });
+    scheduleSettingsSave(get);
+  },
+  updateNote: (ticker, id, title, text) => {
+    const t = text.trim();
+    const ttl = title.trim();
+    if (!t || !ttl) return;
+    const list = (get().notes[ticker] || []).map((n) => (n.id === id ? { ...n, title: ttl, text: t, editedTs: Date.now() } : n));
+    const notes = { ...get().notes, [ticker]: list };
     persistNotes(notes);
     set({ notes });
     scheduleSettingsSave(get);

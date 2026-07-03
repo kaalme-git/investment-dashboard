@@ -18,6 +18,7 @@ export default function CompanyScreen() {
   const watchlist = useStore((s) => s.watchlist);
   const notes = useStore((s) => s.notes);
   const addNote = useStore((s) => s.addNote);
+  const updateNote = useStore((s) => s.updateNote);
   const removeNote = useStore((s) => s.removeNote);
   const addWatchTicker = useStore((s) => s.addWatchTicker);
   const companyMetrics = useStore((s) => s.portfolio.companyMetrics);
@@ -74,6 +75,20 @@ export default function CompanyScreen() {
     try { await deleteCompanyFile(f.path); await reloadFiles(); }
     catch (err) { setFileError(String((err as Error)?.message || err)); }
   };
+  // in-place note editing; saving goes through a confirmation modal
+  const [editing, setEditing] = useState<{ id: string; title: string; text: string } | null>(null);
+  const [pendingSave, setPendingSave] = useState(false);
+  const startEdit = (n: { id: string; title: string; text: string }) => {
+    setEditing({ id: n.id, title: n.title, text: n.text });
+    setExpanded((prev) => new Set(prev).add(n.id));
+  };
+  const confirmSaveEdit = () => {
+    if (!editing) return;
+    updateNote(ticker, editing.id, editing.title, editing.text);
+    setEditing(null);
+    setPendingSave(false);
+  };
+
   // note deletion goes through a styled confirmation modal (cannot be recovered)
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const confirmDeleteNote = () => {
@@ -328,7 +343,15 @@ export default function CompanyScreen() {
                         </svg>
                       </button>
                       <span className="notetitle">{n.title}</span>
+                      {n.editedTs ? <span className="noteedited">edited</span> : null}
                       <span className="notets">{fmtTs(n.ts)}</span>
+                      <button
+                        className="noteedit"
+                        onClick={(e) => { e.stopPropagation(); startEdit(n); }}
+                        title="Edit note"
+                      >
+                        Edit
+                      </button>
                       <button
                         className="notedel"
                         onClick={(e) => { e.stopPropagation(); setPendingDelete({ id: n.id, title: n.title }); }}
@@ -337,7 +360,35 @@ export default function CompanyScreen() {
                         Delete
                       </button>
                     </div>
-                    {open && (
+                    {open && editing?.id === n.id ? (
+                      <div className="noteeditform">
+                        <input
+                          className="notetitlein"
+                          value={editing.title}
+                          maxLength={80}
+                          onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                        />
+                        <textarea
+                          className="stratin notein"
+                          rows={4}
+                          value={editing.text}
+                          onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                        />
+                        <div className="noteformfoot">
+                          <span className="modehint">Editing — changes overwrite the original note.</span>
+                          <span style={{ display: "flex", gap: 8 }}>
+                            <button className="cdlg-btn" onClick={() => setEditing(null)}>Cancel</button>
+                            <button
+                              className="askbtn notepost"
+                              onClick={() => setPendingSave(true)}
+                              disabled={!editing.title.trim() || !editing.text.trim()}
+                            >
+                              Save changes
+                            </button>
+                          </span>
+                        </div>
+                      </div>
+                    ) : open ? (
                       <>
                         <div className="notetext">{n.text}</div>
                         {filesOn && (
@@ -350,7 +401,7 @@ export default function CompanyScreen() {
                           />
                         )}
                       </>
-                    )}
+                    ) : null}
                   </div>
                 );
               })}
@@ -366,6 +417,16 @@ export default function CompanyScreen() {
           confirmLabel="Delete note"
           onConfirm={confirmDeleteNote}
           onCancel={() => setPendingDelete(null)}
+        />
+      )}
+      {pendingSave && editing && (
+        <ConfirmDialog
+          title="Save changes?"
+          message={`The note "${editing.title.trim()}" will be overwritten with your edits. The previous version cannot be recovered.`}
+          confirmLabel="Save changes"
+          variant="primary"
+          onConfirm={confirmSaveEdit}
+          onCancel={() => setPendingSave(false)}
         />
       )}
     </>

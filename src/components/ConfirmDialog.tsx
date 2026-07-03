@@ -6,12 +6,15 @@ export default function ConfirmDialog({
   title,
   message,
   confirmLabel = "Delete",
+  variant = "danger",
   onConfirm,
   onCancel,
 }: {
   title: string;
   message: string;
   confirmLabel?: string;
+  /** "danger" (red, destructive) or "primary" (brand blue, e.g. saving an edit). */
+  variant?: "danger" | "primary";
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -28,7 +31,7 @@ export default function ConfirmDialog({
         <div className="cdlg-msg">{message}</div>
         <div className="cdlg-acts">
           <button className="cdlg-btn" onClick={onCancel} autoFocus>Cancel</button>
-          <button className="cdlg-btn danger" onClick={onConfirm}>{confirmLabel}</button>
+          <button className={"cdlg-btn " + variant} onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
     </div>
